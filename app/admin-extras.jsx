@@ -264,6 +264,12 @@ function AttendancePanel({ cohortId, type, kind }) {
   const [days, setDays] = useState(() => generateRange(14));
   const [_, force] = useState(0);
 
+  // Supabase 비동기 부트스트랩 / Gist 폴링으로 데이터가 늦게 도착하는 경우 대비
+  useEffect(() => {
+    const unsubscribe = window.STORE.onChange(() => force(x => x + 1));
+    return unsubscribe;
+  }, []);
+
   function generateRange(n) {
     const arr = [];
     const t = new Date();

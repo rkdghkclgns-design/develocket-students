@@ -1349,30 +1349,32 @@ input, textarea, select { font-family: inherit; }
   z-index: 70;
 }
 .student-modal {
-  max-width: 760px;
+  /* 명시적 width/height — flex 환경에서 0 붕괴 방지 */
+  width: min(760px, calc(100vw - 48px)) !important;
+  max-width: min(760px, calc(100vw - 48px)) !important;
+  min-height: 200px;
+  height: auto;
   max-height: calc(100vh - 48px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 0;
-}
-.student-modal > .drawer-head {
-  border-radius: var(--r-xl) var(--r-xl) 0 0;
-  flex-shrink: 0;
-}
-.student-modal > div:nth-child(2) {
-  /* tab bar */
-  flex-shrink: 0;
-}
-.student-modal > .drawer-body {
+  background: var(--surface);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
   overflow-y: auto;
-  flex: 1 1 auto;
-  min-height: 0;
+  overflow-x: hidden;
+  padding: 0;
+  position: relative;
+  z-index: 1;
+}
+.student-modal .drawer-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 @media (max-width: 720px) {
   .student-modal {
-    max-width: 100vw;
-    max-height: calc(100vh - 16px);
+    width: 100vw !important;
+    max-width: 100vw !important;
+    max-height: 100vh;
+    border-radius: 0;
   }
 }
 
