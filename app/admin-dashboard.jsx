@@ -305,15 +305,15 @@ function AdminDashboard({ cohortId, dangerThreshold, layout, onLogout, onSwitchC
 }
 
 /* ==========================================================================
-   StudentDetailModal — 중앙 정렬 팝업으로 학생 상세 표시
+   StudentDetailModal — React Portal + 인라인 스타일로 stacking context 회피
+   - document.body 직속에 렌더링 → 부모 transform/overflow/contain 영향 0
+   - 인라인 스타일로 CSS 충돌 방지
    - ESC, 오버레이 클릭으로 닫기
-   - 내부는 기존 StudentDetail 컴포넌트 재사용
    ========================================================================== */
 function StudentDetailModal({ row, threshold, onClose, onUpdate }) {
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
-    // 모달 열린 동안 body 스크롤 잠금
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
@@ -322,14 +322,56 @@ function StudentDetailModal({ row, threshold, onClose, onUpdate }) {
     };
   }, [onClose]);
 
-  return (
-    <div className="modal-overlay student-modal-overlay"
+  const overlayStyle = {
+    position: 'fixed',
+    inset: 0,
+    top: 0, right: 0, bottom: 0, left: 0,
+    width: '100vw',
+    height: '100vh',
+    zIndex: 99999,
+    background: 'rgba(20, 12, 50, 0.5)',
+    backdropFilter: 'blur(2px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '24px',
+    boxSizing: 'border-box',
+    animation: 'fadein 0.18s ease both'
+  };
+  const boxStyle = {
+    background: '#FFFFFF',
+    borderRadius: '20px',
+    boxShadow: '0 24px 64px rgba(20, 12, 50, 0.32)',
+    width: 'min(760px, calc(100vw - 48px))',
+    maxHeight: 'calc(100vh - 48px)',
+    minHeight: '320px',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    position: 'relative',
+    animation: 'pop 0.22s cubic-bezier(0.16, 1, 0.3, 1) both'
+  };
+  const scrollWrapStyle = {
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    flex: '1 1 auto',
+    minHeight: 0,
+    WebkitOverflowScrolling: 'touch'
+  };
+
+  const node = (
+    <div style={overlayStyle}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal student-modal" role="dialog" aria-modal="true">
-        <StudentDetail row={row} threshold={threshold} onClose={onClose} onUpdate={onUpdate} />
+      <div style={boxStyle} role="dialog" aria-modal="true" aria-label="학생 상세 정보">
+        <div style={scrollWrapStyle}>
+          <StudentDetail row={row} threshold={threshold} onClose={onClose} onUpdate={onUpdate} />
+        </div>
       </div>
     </div>
   );
+
+  // React Portal: document.body 직속에 렌더 → 부모 stacking context 우회
+  return ReactDOM.createPortal(node, document.body);
 }
 
 window.StudentDetailModal = StudentDetailModal;
