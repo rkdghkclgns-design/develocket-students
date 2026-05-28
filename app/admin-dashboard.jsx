@@ -548,6 +548,7 @@ function StudentDetail({ row, threshold, onClose, onUpdate }) {
   const [tab, setTab] = useState('overview'); // overview | reports | jobs | comments | info
 
   function reloadJobs() { setJobs(window.STORE.listJobs(s.id)); }
+  function reloadReports() { setReports(window.STORE.listReports(s.id)); }
 
   function addComment(visibility = 'both') {
     const text = newComment.trim();
@@ -644,10 +645,22 @@ function StudentDetail({ row, threshold, onClose, onUpdate }) {
         )}
 
         {tab === 'reports' && (
-          <div className="history-list" style={{ maxHeight: 'none' }}>
-            {reports.length === 0 ? <div className="empty">보고 없음</div> :
-              reports.map(r => <HistoryItem key={r.id} report={r} />)
-            }
+          <div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              👨‍🏫 관리자 권한 — 학생 보고를 직접 편집·삭제할 수 있습니다.
+            </div>
+            <div className="history-list" style={{ maxHeight: 'none' }}>
+              {reports.length === 0 ? <div className="empty">보고 없음</div> :
+                reports.map(r => (
+                  <AdminReportItem
+                    key={r.id}
+                    report={r}
+                    studentId={s.id}
+                    onChange={() => { reloadReports(); onUpdate(); }}
+                  />
+                ))
+              }
+            </div>
           </div>
         )}
 
@@ -1014,5 +1027,245 @@ function SummaryCard({ decor, label, value, unit, valueColor, foot, filterKey, a
   );
 }
 
+/* ==========================================================================
+   AdminReportItem — 관리자가 학생 일일 보고를 인라인 편집·삭제
+   - 기본 모드: 읽기 전용 표시 (HistoryItem 과 동일 레이아웃)
+   - 편집 모드: mood/status/today_done/tomorrow_plan/blockers/주간목표 수정
+   - 삭제: 확인 후 영구 삭제
+   ========================================================================== */
+function AdminReportItem({ report, studentId, onChange }) {
+  const [expanded, setExpanded] = useState(true);
+  const [mode, setMode] = useState('view'); // 'view' | 'edit'
+  const [draft, setDraft] = useState(() => normalizeDraft(report));
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  useEffect(() => {
+    setDraft(normalizeDraft(report));
+  }, [report.id]);
+
+  function normalizeDraft(r) {
+    return {
+      mood: window.normalizeMoodLevel(r.mood),
+      status: r.status || 'in-progress',
+      today_done: r.today_done || '',
+      tomorrow_plan: r.tomorrow_plan || '',
+      blockers: r.blockers || '',
+      weekly_goals: (r.weekly_goals || []).map(g => ({ ...g }))
+    };
+  }
+  function startEdit() {
+    setDraft(normalizeDraft(report));
+    setMode('edit');
+    setExpanded(true);
+  }
+  function cancelEdit() {
+    setDraft(normalizeDraft(report));
+    setMode('view');
+  }
+  async function save() {
+    try {
+      const result = window.STORE.upsertReport(studentId, {
+        date: report.date,
+        mood: draft.mood,
+        status: draft.status,
+        today_done: draft.today_done,
+        tomorrow_plan: draft.tomorrow_plan,
+        blockers: draft.blockers,
+        weekly_goals: draft.weekly_goals,
+        attachments: report.attachments || []
+      });
+      if (result && typeof result.then === 'function') await result;
+      setMode('view');
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1500);
+      onChange && onChange();
+    } catch (e) {
+      alert('저장 실패: ' + (e?.message || e));
+    }
+  }
+  async function remove() {
+    if (!confirm(
+      `${report.date} 보고를 삭제하시겠어요?\n\n` +
+      `· 학생이 작성한 내용이 영구 삭제됩니다.\n` +
+      `· 되돌릴 수 없습니다.`
+    )) return;
+    try {
+      const result = window.STORE.deleteReport(report.id);
+      if (result && typeof result.then === 'function') await result;
+      onChange && onChange();
+    } catch (e) {
+      alert('삭제 실패: ' + (e?.message || e));
+    }
+  }
+  function updateGoal(id, patch) {
+    setDraft(d => ({ ...d, weekly_goals: d.weekly_goals.map(g => g.id === id ? { ...g, ...patch } : g) }));
+  }
+  function addGoal() {
+    setDraft(d => ({ ...d, weekly_goals: [...d.weekly_goals, { id: window.STORE_HELPERS.uid('wg'), text: '', status: 'not-started' }] }));
+  }
+  function removeGoal(id) {
+    setDraft(d => ({ ...d, weekly_goals: d.weekly_goals.filter(g => g.id !== id) }));
+  }
+
+  return (
+    <div className="history-item" style={{ position: 'relative' }}>
+      <div className="history-head" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="history-date">{report.date}</span>
+          <StatusPill status={(mode === 'edit' ? draft.status : report.status)} />
+          {savedFlash && (
+            <span className="pill" style={{ background: 'var(--alert-fresh-bg)', color: 'var(--alert-fresh)', fontSize: 10 }}>
+              ✓ 저장됨
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+          <span className="history-mood"
+            title={`Lv.${mode === 'edit' ? draft.mood : window.normalizeMoodLevel(report.mood)} ${window.getMoodEntry(mode === 'edit' ? draft.mood : report.mood).label}`}>
+            {window.moodIcon(mode === 'edit' ? draft.mood : report.mood)}
+          </span>
+          {mode === 'view' ? (
+            <>
+              <button className="btn btn-ghost btn-sm" onClick={startEdit} title="보고 편집">
+                <Icon.Edit /> 편집
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={remove}
+                title="보고 삭제" style={{ color: 'var(--alert-danger)' }}>
+                <Icon.Trash /> 삭제
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-ghost btn-sm" onClick={cancelEdit}>취소</button>
+              <button className="btn btn-primary btn-sm" onClick={save}>저장</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {mode === 'edit' ? (
+        <div style={{ marginTop: 12 }}>
+          <div className="field-block">
+            <div className="field-label">🌤️ 컨디션</div>
+            <MoodPicker value={draft.mood} onChange={v => setDraft(d => ({ ...d, mood: v }))} />
+          </div>
+          <div className="field-block">
+            <div className="field-label">📊 진행 상태</div>
+            <StatusPicker value={draft.status} onChange={v => setDraft(d => ({ ...d, status: v }))} />
+          </div>
+          <div className="field-block">
+            <div className="field-label">✅ 오늘 한 일</div>
+            <MarkdownEditor value={draft.today_done}
+              onChange={v => setDraft(d => ({ ...d, today_done: v }))}
+              placeholder="오늘 한 일" rows={4} />
+          </div>
+          <div className="field-block">
+            <div className="field-label">🎯 내일 할 일</div>
+            <MarkdownEditor value={draft.tomorrow_plan}
+              onChange={v => setDraft(d => ({ ...d, tomorrow_plan: v }))}
+              placeholder="내일 할 일" rows={3} />
+          </div>
+          <div className="field-block">
+            <div className="field-label">🚧 막힌 부분</div>
+            <MarkdownEditor value={draft.blockers}
+              onChange={v => setDraft(d => ({ ...d, blockers: v }))}
+              placeholder="없으면 비워두세요" rows={2} />
+          </div>
+          <div className="field-block">
+            <div className="field-label">📅 주간 목표</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {draft.weekly_goals.map((g, i) => (
+                <div key={g.id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input className="input" style={{ padding: '6px 10px', flex: 1, fontSize: 13 }}
+                    value={g.text}
+                    placeholder={`목표 ${i + 1}`}
+                    onChange={e => updateGoal(g.id, { text: e.target.value })} />
+                  <select className="select" style={{ width: 100, padding: '6px 8px', fontSize: 12 }}
+                    value={g.status}
+                    onChange={e => updateGoal(g.id, { status: e.target.value })}>
+                    <option value="not-started">시작전</option>
+                    <option value="in-progress">진행중</option>
+                    <option value="done">완료</option>
+                    <option value="blocked">막힘</option>
+                  </select>
+                  <button className="btn btn-ghost btn-sm" onClick={() => removeGoal(g.id)} title="삭제">
+                    <Icon.Trash />
+                  </button>
+                </div>
+              ))}
+              <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }} onClick={addGoal}>
+                <Icon.Plus /> 목표 추가
+              </button>
+            </div>
+          </div>
+          {(report.attachments || []).length > 0 && (
+            <div className="field-block">
+              <div className="field-label">📎 첨부 (편집 비지원)</div>
+              <div className="attachments">
+                {report.attachments.map((a, i) => (
+                  <span key={i} className="attachment-chip">
+                    {a.type === 'image' ? '🖼️' : <Icon.Link />}
+                    <a href={a.url} target="_blank" rel="noopener">{a.label}</a>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : !expanded ? (
+        <>
+          {report.today_done && (
+            <div className="history-row" style={{ color: 'var(--ink-soft)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {report.today_done.replace(/[#*`>\-]/g, '').replace(/\n/g, ' ').slice(0, 80)}
+            </div>
+          )}
+          <button className="btn btn-ghost btn-sm" style={{ marginTop: 8, padding: '4px 8px' }}
+            onClick={() => setExpanded(true)}>자세히 보기 →</button>
+        </>
+      ) : (
+        <>
+          {report.today_done && (
+            <div className="history-row"><b>오늘 한 일</b><MarkdownView text={report.today_done} /></div>
+          )}
+          {report.tomorrow_plan && (
+            <div className="history-row" style={{ marginTop: 10 }}><b>내일 할 일</b><MarkdownView text={report.tomorrow_plan} /></div>
+          )}
+          {report.blockers && (
+            <div className="history-row" style={{ marginTop: 10 }}><b>막힌 부분</b><MarkdownView text={report.blockers} /></div>
+          )}
+          {(report.weekly_goals || []).length > 0 && (
+            <div className="history-row" style={{ marginTop: 10 }}>
+              <b>주간 목표</b>
+              <ul style={{ paddingLeft: 18, margin: '4px 0' }}>
+                {report.weekly_goals.map(g => (
+                  <li key={g.id} style={{ textDecoration: g.status === 'done' ? 'line-through' : 'none', color: g.status === 'done' ? 'var(--ink-mute)' : 'inherit' }}>
+                    {g.text || '(빈 항목)'} <span className="muted" style={{ fontSize: 11 }}>({STATUS_OPTIONS.find(o => o.key === g.status)?.label})</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(report.attachments || []).length > 0 && (
+            <div className="history-row" style={{ marginTop: 8 }}>
+              <b>첨부</b>
+              <div className="attachments">
+                {report.attachments.map((a, i) => (
+                  <span key={i} className="attachment-chip">
+                    {a.type === 'image' ? '🖼️' : <Icon.Link />}
+                    <a href={a.url} target="_blank" rel="noopener">{a.label}</a>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <button className="btn btn-ghost btn-sm" style={{ marginTop: 8, padding: '4px 8px' }}
+            onClick={() => setExpanded(false)}>접기</button>
+        </>
+      )}
+    </div>
+  );
+}
+
 window.AdminDashboard = AdminDashboard;
 window.SummaryCard = SummaryCard;
+window.AdminReportItem = AdminReportItem;
