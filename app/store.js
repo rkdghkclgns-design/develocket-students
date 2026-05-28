@@ -709,46 +709,120 @@
   }
 
   /* ---------------- Supabase Adapter ----------------
-     - 같은 메서드 시그니처. mount 시 전체 캐시 + realtime 구독
-     - 활성화: setSupabaseConfig({url, anonKey}) → reload
+     dl_ 접두사 테이블 사용:
+     - dl_cohorts, dl_students, dl_daily_reports, dl_jobs, dl_comments, dl_attendance
+     컬럼 매핑: birth_date <-> birthDate (UI 호환)
   ------------------------------------------------- */
+  const SB_TABLES = {
+    cohorts: 'dl_cohorts',
+    students: 'dl_students',
+    daily_reports: 'dl_daily_reports',
+    jobs: 'dl_jobs',
+    comments: 'dl_comments',
+    attendance: 'dl_attendance'
+  };
+  // DB row → UI student
+  function fromDbStudent(r) {
+    if (!r) return r;
+    return {
+      ...r,
+      birthDate: r.birth_date || ''  // UI alias
+    };
+  }
+  function toDbStudent(s) {
+    const out = { ...s };
+    if ('birthDate' in out) {
+      out.birth_date = out.birthDate;
+      delete out.birthDate;
+    }
+    return out;
+  }
+
   class SupabaseAdapter {
     constructor(client) {
       this.client = client;
       this._listeners = new Set();
-      this.db = { students: [], daily_reports: [], jobs: [], comments: [], admin_meta: {} };
+      this.db = {
+        students: [], daily_reports: [], jobs: [], comments: [],
+        attendance: [], cohort_meta: {}, admin_meta: {}
+      };
       this.ready = this._bootstrap();
     }
     async _bootstrap() {
-      const [students, reports, jobs, comments] = await Promise.all([
-        this.client.from('students').select('*'),
-        this.client.from('daily_reports').select('*'),
-        this.client.from('jobs').select('*'),
-        this.client.from('comments').select('*')
+      const [cohorts, students, reports, jobs, comments, attendance] = await Promise.all([
+        this.client.from(SB_TABLES.cohorts).select('*'),
+        this.client.from(SB_TABLES.students).select('*'),
+        this.client.from(SB_TABLES.daily_reports).select('*'),
+        this.client.from(SB_TABLES.jobs).select('*'),
+        this.client.from(SB_TABLES.comments).select('*'),
+        this.client.from(SB_TABLES.attendance).select('*')
       ]);
-      this.db.students      = students.data || [];
+      this.db.students      = (students.data || []).map(fromDbStudent);
       this.db.daily_reports = reports.data  || [];
       this.db.jobs          = jobs.data     || [];
       this.db.comments      = comments.data || [];
-      ['students', 'daily_reports', 'jobs', 'comments'].forEach(table => {
+      this.db.attendance    = attendance.data || [];
+
+      // cohort_meta: dl_cohorts → STUDENT_ROSTER 갱신 (기존 시드에 없는 cohort 등록)
+      (cohorts.data || []).forEach(c => {
+        global.STUDENT_ROSTER[c.id] = global.STUDENT_ROSTER[c.id] || {
+          label: c.label, track: c.track || '', round: c.round || '',
+          color: c.color || '#7C5CFF', students: []
+        };
+        // 라벨 등은 DB 값으로 덮어쓰기
+        Object.assign(global.STUDENT_ROSTER[c.id], {
+          label: c.label, track: c.track || global.STUDENT_ROSTER[c.id].track,
+          round: c.round || global.STUDENT_ROSTER[c.id].round,
+          color: c.color || global.STUDENT_ROSTER[c.id].color
+        });
+        this.db.cohort_meta[c.id] = {
+          archived_at: c.archived_at, custom: !!c.custom,
+          label: c.label, track: c.track, round: c.round, color: c.color
+        };
+      });
+
+      // Realtime: 변경 발생 시 db 갱신
+      Object.entries(SB_TABLES).forEach(([key, table]) => {
         this.client.channel(`rt_${table}`)
           .on('postgres_changes', { event: '*', schema: 'public', table }, payload => {
-            const rows = this.db[table];
-            if (payload.eventType === 'INSERT') rows.push(payload.new);
+            if (key === 'cohorts') { this._applyCohortChange(payload); this._notify(); return; }
+            const rows = this.db[key];
+            if (!rows) return;
+            const newRow = key === 'students' ? fromDbStudent(payload.new) : payload.new;
+            if (payload.eventType === 'INSERT') rows.push(newRow);
             else if (payload.eventType === 'UPDATE') {
-              const i = rows.findIndex(r => r.id === payload.new.id);
-              if (i >= 0) rows[i] = payload.new;
+              const i = rows.findIndex(r => r.id === newRow.id);
+              if (i >= 0) rows[i] = newRow;
             } else if (payload.eventType === 'DELETE') {
-              this.db[table] = rows.filter(r => r.id !== payload.old.id);
+              this.db[key] = rows.filter(r => r.id !== payload.old.id);
             }
             this._notify();
           }).subscribe();
       });
       this._notify();
     }
+    _applyCohortChange(payload) {
+      if (payload.eventType === 'DELETE') {
+        delete this.db.cohort_meta[payload.old.id];
+        return;
+      }
+      const c = payload.new;
+      global.STUDENT_ROSTER[c.id] = global.STUDENT_ROSTER[c.id] || {
+        label: c.label, track: c.track || '', round: c.round || '',
+        color: c.color || '#7C5CFF', students: []
+      };
+      Object.assign(global.STUDENT_ROSTER[c.id], {
+        label: c.label, track: c.track || '', round: c.round || '', color: c.color || '#7C5CFF'
+      });
+      this.db.cohort_meta[c.id] = {
+        archived_at: c.archived_at, custom: !!c.custom,
+        label: c.label, track: c.track, round: c.round, color: c.color
+      };
+    }
     onChange(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
     _notify() { this._listeners.forEach(fn => { try { fn(); } catch(e){} }); }
 
+    /* ===== students ===== */
     listStudents(cohort) {
       const list = (cohort ? this.db.students.filter(s => s.cohort === cohort) : this.db.students).slice();
       return list.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
@@ -757,29 +831,81 @@
     getStudentByCohortName(cohort, name) {
       return this.db.students.find(s => s.cohort === cohort && s.name === name);
     }
-    /* ---- student passwords ---- */
-    hasStudentPassword(id) {
-      const s = this.getStudent(id);
-      return !!(s && s.password);
+    async addStudent(cohort, payload) {
+      const id = payload.id || uid('std');
+      const row = toDbStudent({
+        id, cohort,
+        name: payload.name || '',
+        age: payload.age || null,
+        gender: payload.gender || 'M',
+        birthDate: payload.birthDate || '',
+        phone: payload.phone || '',
+        addr1: payload.addr1 || '',
+        addr2: payload.addr2 || '',
+        email: payload.email || '',
+        course: payload.course || (global.STUDENT_ROSTER[cohort]?.track || ''),
+        education: payload.education || '',
+        grade: payload.grade || '',
+        career_goal: payload.career_goal || '',
+        alt_employment: !!payload.alt_employment,
+        employment_status: payload.employment_status || '구직중',
+        excluded_from_pool: !!payload.excluded_from_pool,
+        drive_link: payload.drive_link || ''
+      });
+      const { data, error } = await this.client.from(SB_TABLES.students).insert(row).select().single();
+      if (error) throw error;
+      const s = fromDbStudent(data);
+      this.db.students.push(s);
+      this._notify();
+      return s;
     }
-    getStudentPassword(id) {
-      const s = this.getStudent(id);
-      return s ? (s.password || null) : null;
+    async updateStudent(id, patch) {
+      const dbPatch = toDbStudent(patch);
+      delete dbPatch.id;
+      const { data, error } = await this.client.from(SB_TABLES.students)
+        .update(dbPatch).eq('id', id).select().single();
+      if (error) throw error;
+      const i = this.db.students.findIndex(s => s.id === id);
+      if (i >= 0) this.db.students[i] = fromDbStudent(data);
+      this._notify();
     }
+    async updateStudentFields(id, patch) {
+      // 관리자 필드 + drive_link 등
+      const allowed = ['grade','career_goal','alt_employment','employment_status','excluded_from_pool','drive_link'];
+      const filtered = {};
+      allowed.forEach(k => { if (k in patch) filtered[k] = patch[k]; });
+      if (Object.keys(filtered).length === 0) return;
+      return this.updateStudent(id, filtered);
+    }
+    async deleteStudent(id) {
+      await this.client.from(SB_TABLES.students).delete().eq('id', id);
+      this.db.students = this.db.students.filter(s => s.id !== id);
+      this.db.daily_reports = this.db.daily_reports.filter(r => r.student_id !== id);
+      this.db.jobs = this.db.jobs.filter(j => j.student_id !== id);
+      this.db.comments = this.db.comments.filter(c => c.student_id !== id);
+      this.db.attendance = this.db.attendance.filter(a => a.student_id !== id);
+      this._notify();
+    }
+
+    /* ===== passwords ===== */
+    hasStudentPassword(id) { const s = this.getStudent(id); return !!(s && s.password); }
+    getStudentPassword(id) { const s = this.getStudent(id); return s ? (s.password || null) : null; }
     verifyStudentPassword(id, password) {
       const s = this.getStudent(id);
       return !!s && s.password === password;
     }
     async setStudentPassword(id, password) {
-      const { data } = await this.client.from('students')
-        .update({ password, password_updated_at: new Date().toISOString() })
-        .eq('id', id).select().single();
+      const patch = { password, password_updated_at: new Date().toISOString() };
+      const { data, error } = await this.client.from(SB_TABLES.students)
+        .update(patch).eq('id', id).select().single();
+      if (error) throw error;
       const i = this.db.students.findIndex(s => s.id === id);
-      if (i >= 0) this.db.students[i] = data;
+      if (i >= 0) this.db.students[i] = fromDbStudent(data);
       this._notify();
       return true;
     }
 
+    /* ===== daily reports ===== */
     listReports(studentId) {
       return this.db.daily_reports
         .filter(r => r.student_id === studentId)
@@ -791,16 +917,30 @@
     }
     async upsertReport(studentId, patch) {
       const date = patch.date || todayStr();
-      const row = { student_id: studentId, date, week_key: weekKey(date), ...patch, updated_at: new Date().toISOString() };
-      const { data } = await this.client.from('daily_reports')
+      const existing = this.db.daily_reports.find(r => r.student_id === studentId && r.date === date);
+      const row = {
+        id: existing?.id || uid('rep'),
+        student_id: studentId,
+        date,
+        week_key: weekKey(date),
+        mood: patch.mood ?? null,
+        today_done: patch.today_done || '',
+        tomorrow_plan: patch.tomorrow_plan || '',
+        blockers: patch.blockers || '',
+        weekly_goals: patch.weekly_goals || [],
+        status: patch.status || 'in-progress',
+        attachments: patch.attachments || []
+      };
+      const { data, error } = await this.client.from(SB_TABLES.daily_reports)
         .upsert(row, { onConflict: 'student_id,date' }).select().single();
+      if (error) { console.warn('upsertReport error', error); return existing || row; }
       const i = this.db.daily_reports.findIndex(r => r.student_id === studentId && r.date === date);
       if (i >= 0) this.db.daily_reports[i] = data; else this.db.daily_reports.push(data);
       this._notify();
       return data;
     }
     async deleteReport(id) {
-      await this.client.from('daily_reports').delete().eq('id', id);
+      await this.client.from(SB_TABLES.daily_reports).delete().eq('id', id);
       this.db.daily_reports = this.db.daily_reports.filter(r => r.id !== id);
       this._notify();
     }
@@ -814,23 +954,42 @@
       return latest?.weekly_goals ? latest.weekly_goals.map(g => ({ ...g, status: 'not-started' })) : [];
     }
 
+    /* ===== jobs ===== */
     listJobs(studentId) {
       return this.db.jobs
         .filter(j => j.student_id === studentId)
         .sort((a, b) => (b.registered_at || '').localeCompare(a.registered_at || ''));
     }
     async upsertJob(job) {
-      const { data } = await this.client.from('jobs').upsert({ ...job, updated_at: todayStr() }).select().single();
+      const row = {
+        id: job.id || uid('job'),
+        student_id: job.student_id,
+        title: job.title || '',
+        company: job.company || '',
+        role: job.role || '',
+        status: job.status || '미지원',
+        interest: job.interest ?? 5,
+        registered_at: job.registered_at || todayStr(),
+        updated_at: todayStr(),
+        planned_apply_date: job.planned_apply_date || null,
+        due_date: job.due_date || null,
+        url: job.url || '',
+        memo: job.memo || ''
+      };
+      const { data, error } = await this.client.from(SB_TABLES.jobs)
+        .upsert(row).select().single();
+      if (error) { console.warn('upsertJob error', error); return; }
       const i = this.db.jobs.findIndex(j => j.id === data.id);
       if (i >= 0) this.db.jobs[i] = data; else this.db.jobs.push(data);
       this._notify();
     }
     async deleteJob(id) {
-      await this.client.from('jobs').delete().eq('id', id);
+      await this.client.from(SB_TABLES.jobs).delete().eq('id', id);
       this.db.jobs = this.db.jobs.filter(j => j.id !== id);
       this._notify();
     }
 
+    /* ===== comments ===== */
     listComments(studentId, opts = {}) {
       const all = this.db.comments
         .filter(c => c.student_id === studentId)
@@ -842,49 +1001,114 @@
     }
     async addComment(studentId, author, text, opts = {}) {
       const row = {
+        id: uid('cm'),
         student_id: studentId, author, text,
         author_role: opts.role || 'admin',
         visibility: opts.visibility || 'both',
         parent_id: opts.parentId || null
       };
-      const { data } = await this.client.from('comments').insert(row).select().single();
+      const { data, error } = await this.client.from(SB_TABLES.comments).insert(row).select().single();
+      if (error) { console.warn('addComment error', error); return; }
       this.db.comments.push(data);
       this._notify();
       return data;
     }
+    updateComment(id, patch) {
+      // optional
+      return this.client.from(SB_TABLES.comments).update(patch).eq('id', id);
+    }
     async deleteComment(id) {
-      await this.client.from('comments').delete().eq('id', id);
+      await this.client.from(SB_TABLES.comments).delete().eq('id', id);
       this.db.comments = this.db.comments.filter(c => c.id !== id);
       this._notify();
     }
 
-    getDashboardRows(cohort) {
-      // identical projection logic as LocalAdapter
-      return LocalAdapter.prototype.getDashboardRows.call(this, cohort);
+    /* ===== attendance ===== */
+    listAttendance(opts = {}) {
+      let list = this.db.attendance.slice();
+      if (opts.studentId) list = list.filter(a => a.student_id === opts.studentId);
+      if (opts.type) list = list.filter(a => a.type === opts.type);
+      if (opts.cohort) {
+        const ids = new Set(this.listStudents(opts.cohort).map(s => s.id));
+        list = list.filter(a => ids.has(a.student_id));
+      }
+      if (opts.date) list = list.filter(a => a.date === opts.date);
+      return list;
     }
-    /* cohort methods reuse LocalAdapter (메모리 기반) — Supabase 테이블이 따로 없으므로 클라이언트 측 메타만 관리 */
+    getAttendance(studentId, type, date) {
+      return this.db.attendance.find(a =>
+        a.student_id === studentId && a.type === type && a.date === date
+      );
+    }
+    async setAttendance(studentId, type, date, attended, memo = '') {
+      const existing = this.getAttendance(studentId, type, date);
+      if (attended === false || attended === null) {
+        if (existing) {
+          await this.client.from(SB_TABLES.attendance).delete().eq('id', existing.id);
+          this.db.attendance = this.db.attendance.filter(a => a.id !== existing.id);
+          this._notify();
+        }
+        return;
+      }
+      const row = {
+        id: existing?.id || uid('att'),
+        student_id: studentId, type, date,
+        attended: true, memo: memo || ''
+      };
+      const { data, error } = await this.client.from(SB_TABLES.attendance)
+        .upsert(row, { onConflict: 'student_id,type,date' }).select().single();
+      if (error) { console.warn('setAttendance error', error); return; }
+      const i = this.db.attendance.findIndex(a => a.id === data.id);
+      if (i >= 0) this.db.attendance[i] = data; else this.db.attendance.push(data);
+      this._notify();
+    }
+    countAttendance(studentId, type) {
+      return this.db.attendance.filter(a =>
+        a.student_id === studentId && a.type === type && a.attended
+      ).length;
+    }
+
+    /* ===== dashboard / employment stats / cohorts ===== */
+    getDashboardRows(cohort) { return LocalAdapter.prototype.getDashboardRows.call(this, cohort); }
+    getEmploymentStats(cohort) { return LocalAdapter.prototype.getEmploymentStats.call(this, cohort); }
+
     _syncRoster() { return LocalAdapter.prototype._syncRoster.call(this); }
     listCohorts(opts) { return LocalAdapter.prototype.listCohorts.call(this, opts); }
     getCohort(id) { return LocalAdapter.prototype.getCohort.call(this, id); }
-    archiveCohort(id) {
+    async archiveCohort(id) {
       LocalAdapter.prototype.archiveCohort.call(this, id);
+      await this.client.from(SB_TABLES.cohorts)
+        .update({ archived_at: this.db.cohort_meta[id].archived_at }).eq('id', id);
       this._notify();
     }
-    restoreCohort(id) {
+    async restoreCohort(id) {
       LocalAdapter.prototype.restoreCohort.call(this, id);
+      await this.client.from(SB_TABLES.cohorts).update({ archived_at: null }).eq('id', id);
       this._notify();
     }
-    createCohort(payload) {
+    async createCohort(payload) {
       const r = LocalAdapter.prototype.createCohort.call(this, payload);
+      const meta = this.db.cohort_meta[r.id];
+      await this.client.from(SB_TABLES.cohorts).insert({
+        id: r.id, label: r.label, track: r.track, round: r.round, color: r.color,
+        custom: true, archived_at: null
+      });
       this._notify();
       return r;
     }
-    updateCohort(id, patch) {
+    async updateCohort(id, patch) {
       LocalAdapter.prototype.updateCohort.call(this, id, patch);
+      const dbPatch = {};
+      ['label','track','round','color'].forEach(k => { if (k in patch) dbPatch[k] = patch[k]; });
+      if (Object.keys(dbPatch).length) {
+        await this.client.from(SB_TABLES.cohorts).update(dbPatch).eq('id', id);
+      }
       this._notify();
     }
-    getEmploymentStats(cohort) {
-      return LocalAdapter.prototype.getEmploymentStats.call(this, cohort);
+
+    resetAll() {
+      // Supabase 모드에서는 위험 — 차라리 연결 해제 안내
+      console.warn('[SupabaseAdapter] resetAll 은 Supabase 데이터를 건드리지 않습니다. 연결 해제 후 LocalAdapter 에서 실행하세요.');
     }
   }
 
@@ -992,21 +1216,40 @@
   /* ---------------- Public API ----------------
      Adapter selection priority:
      1) Gist (gistId+token 저장됨) → GistAdapter
-     2) Supabase 설정됨 → SupabaseAdapter
+     2) Supabase 설정됨(또는 DEFAULT 사용) → SupabaseAdapter
      3) 기본 → LocalAdapter
+
+     기본 Supabase 연결은 빌트인. 사용자가 [연결 해제] 하면 localStorage 모드로 fallback.
+     ANON KEY 는 Supabase 정책상 공개 가능 (RLS 로 보호).
   -------------------------------------------- */
+  const DEFAULT_SUPABASE_CONFIG = {
+    url: 'https://etasxbaorwgjoofdxean.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0YXN4YmFvcndnam9vZmR4ZWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NzUwMDIsImV4cCI6MjA5MTI1MTAwMn0.x8gV5pPEflhTniecyVrBNvjedkuimVRBUjh3zvez_us'
+  };
+
   function getSupabaseConfig() {
     try {
       const raw = localStorage.getItem('develocket.supabase');
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) { return null; }
+      if (raw) {
+        const cfg = JSON.parse(raw);
+        if (cfg && cfg.url && cfg.anonKey) return cfg;
+        if (cfg && cfg.disabled) return null; // 명시적 해제 상태
+      }
+    } catch (e) {}
+    // 기본 빌트인 연결
+    return DEFAULT_SUPABASE_CONFIG;
   }
   function setSupabaseConfig(cfg) {
     if (cfg && cfg.url && cfg.anonKey) {
       localStorage.setItem('develocket.supabase', JSON.stringify(cfg));
     } else {
-      localStorage.removeItem('develocket.supabase');
+      // null/false 전달 시 = 명시적 해제 → localStorage 모드 강제
+      localStorage.setItem('develocket.supabase', JSON.stringify({ disabled: true }));
     }
+  }
+  function resetSupabaseConfig() {
+    // 빌트인 기본값으로 복귀
+    localStorage.removeItem('develocket.supabase');
   }
   function getGistConfig() {
     try {
@@ -1071,6 +1314,8 @@
   global.GistAdapter = GistAdapter;
   global.getSupabaseConfig = getSupabaseConfig;
   global.setSupabaseConfig = setSupabaseConfig;
+  global.resetSupabaseConfig = resetSupabaseConfig;
+  global.DEFAULT_SUPABASE_CONFIG = DEFAULT_SUPABASE_CONFIG;
   global.getGistConfig = getGistConfig;
   global.setGistConfig = setGistConfig;
   global.createGistForSync = createGistForSync;
