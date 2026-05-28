@@ -1344,6 +1344,38 @@ input, textarea, select { font-family: inherit; }
   animation: pop 0.25s var(--ease) both;
 }
 
+/* Student detail popup (admin) — wider modal with sticky header */
+.student-modal-overlay {
+  z-index: 70;
+}
+.student-modal {
+  max-width: 760px;
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.student-modal > .drawer-head {
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  flex-shrink: 0;
+}
+.student-modal > div:nth-child(2) {
+  /* tab bar */
+  flex-shrink: 0;
+}
+.student-modal > .drawer-body {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+@media (max-width: 720px) {
+  .student-modal {
+    max-width: 100vw;
+    max-height: calc(100vh - 16px);
+  }
+}
+
 /* Student Jobs Panel (admin drawer) */
 .student-jobs-list {
   display: flex; flex-direction: column; gap: 10px;

@@ -139,7 +139,6 @@ function AdminDashboard({ cohortId, dangerThreshold, layout, onLogout, onSwitchC
             style={{ color: 'var(--alert-danger)' }}>
             🗂️ 기수 종료
           </button>
-          <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>🖨️ 인쇄</button>
           {view === 'students' && (
             <div className="layout-switch">
               <button className={layout === 'cards' ? 'active' : ''} onClick={() => onChangeLayout('cards')}>
@@ -292,13 +291,48 @@ function AdminDashboard({ cohortId, dangerThreshold, layout, onLogout, onSwitchC
         </>
       )}
 
-      {/* Detail drawer */}
-      <Drawer open={!!drawer} onClose={() => setDrawer(null)} width={580}>
-        {drawer && <StudentDetail row={drawer} threshold={dangerThreshold} onClose={() => setDrawer(null)} onUpdate={() => { reload(); force(x => x + 1); }} />}
-      </Drawer>
+      {/* Detail popup (modal) */}
+      {drawer && (
+        <StudentDetailModal
+          row={drawer}
+          threshold={dangerThreshold}
+          onClose={() => setDrawer(null)}
+          onUpdate={() => { reload(); force(x => x + 1); }}
+        />
+      )}
     </div>
   );
 }
+
+/* ==========================================================================
+   StudentDetailModal — 중앙 정렬 팝업으로 학생 상세 표시
+   - ESC, 오버레이 클릭으로 닫기
+   - 내부는 기존 StudentDetail 컴포넌트 재사용
+   ========================================================================== */
+function StudentDetailModal({ row, threshold, onClose, onUpdate }) {
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    // 모달 열린 동안 body 스크롤 잠금
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div className="modal-overlay student-modal-overlay"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal student-modal" role="dialog" aria-modal="true">
+        <StudentDetail row={row} threshold={threshold} onClose={onClose} onUpdate={onUpdate} />
+      </div>
+    </div>
+  );
+}
+
+window.StudentDetailModal = StudentDetailModal;
 
 /* ============= Layouts ============= */
 function CardsLayout({ rows, threshold, onPick }) {
@@ -798,7 +832,7 @@ function PasswordAdminRow({ student, onUpdate }) {
   const [show, setShow] = useState(false);
   const [editing, setEditing] = useState(false);
   const [newPw, setNewPw] = useState('');
-  const [savedFlash, setSavedFlash] = useState(false);
+  const [flash, setFlash] = useState('');
 
   const current = window.STORE.getStudentPassword(student.id);
   const hasPw = !!current;
@@ -811,30 +845,39 @@ function PasswordAdminRow({ student, onUpdate }) {
     window.STORE.setStudentPassword(student.id, newPw);
     setEditing(false);
     setNewPw('');
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 1500);
+    setFlash('저장됨');
+    setTimeout(() => setFlash(''), 1800);
     onUpdate && onUpdate();
   }
-  function reset() {
-    if (!confirm(`${student.name}님의 비밀번호를 초기화할까요? 다음 로그인 시 새로 설정해야 합니다.`)) return;
+  function resetPassword() {
+    if (!confirm(
+      `${student.name}님의 비밀번호를 초기화할까요?\n\n` +
+      `· 현재 비밀번호가 즉시 제거됩니다.\n` +
+      `· 다음 로그인 시 "최초 입장"처럼 새 비밀번호를 직접 설정하게 됩니다.\n` +
+      `· 본 작업은 되돌릴 수 없습니다.`
+    )) return;
     window.STORE.setStudentPassword(student.id, null);
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 1500);
+    setShow(false);
+    setEditing(false);
+    setNewPw('');
+    setFlash('초기화됨 — 다음 로그인 시 재설정 필요');
+    setTimeout(() => setFlash(''), 3000);
     onUpdate && onUpdate();
   }
 
   return (
     <div style={{ marginTop: 18, padding: 14, background: 'var(--surface-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--line)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>🔐 계정 비밀번호</span>
-        {savedFlash && <span className="pill" style={{ background: 'var(--alert-fresh-bg)', color: 'var(--alert-fresh)', fontSize: 11 }}>✓ 저장됨</span>}
-        {!hasPw && <span className="pill" style={{ background: 'var(--alert-warn-bg)', color: 'var(--alert-warn)', fontSize: 11 }}>미설정 (최초 로그인 대기)</span>}
+        {flash && <span className="pill" style={{ background: 'var(--alert-fresh-bg)', color: 'var(--alert-fresh)', fontSize: 11 }}>✓ {flash}</span>}
+        {!hasPw && !flash && <span className="pill" style={{ background: 'var(--alert-warn-bg)', color: 'var(--alert-warn)', fontSize: 11 }}>미설정 (최초 로그인 대기)</span>}
       </div>
 
       {!editing ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{
-            flex: 1,
+            flex: '1 1 200px',
+            minWidth: 0,
             padding: '8px 12px',
             background: 'var(--surface)',
             border: '1px solid var(--line)',
@@ -842,7 +885,10 @@ function PasswordAdminRow({ student, onUpdate }) {
             fontFamily: 'var(--font-mono)',
             fontSize: 14,
             letterSpacing: hasPw && !show ? '0.2em' : '0.05em',
-            color: hasPw ? 'var(--ink)' : 'var(--ink-mute)'
+            color: hasPw ? 'var(--ink)' : 'var(--ink-mute)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
           }}>
             {hasPw ? (show ? current : '•'.repeat(Math.min(current.length, 12))) : '(설정되지 않음)'}
           </div>
@@ -854,11 +900,18 @@ function PasswordAdminRow({ student, onUpdate }) {
           <button className="btn btn-secondary btn-sm" onClick={() => { setEditing(true); setNewPw(''); }}>
             <Icon.Edit /> 수정
           </button>
-          {hasPw && (
-            <button className="btn btn-ghost btn-sm" onClick={reset} title="비밀번호 초기화">
-              <Icon.Trash />
-            </button>
-          )}
+          <button
+            className="btn btn-sm"
+            onClick={resetPassword}
+            disabled={!hasPw}
+            style={{
+              background: hasPw ? 'var(--alert-danger)' : 'var(--bg-2)',
+              color: hasPw ? 'white' : 'var(--ink-mute)',
+              cursor: hasPw ? 'pointer' : 'not-allowed'
+            }}
+            title={hasPw ? '비밀번호를 제거하여 최초 입장 흐름으로 재설정하도록 함' : '이미 미설정 상태입니다'}>
+            <Icon.Trash /> 초기화
+          </button>
         </div>
       ) : (
         <div style={{ display: 'flex', gap: 8 }}>
@@ -879,8 +932,10 @@ function PasswordAdminRow({ student, onUpdate }) {
           <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(false); setNewPw(''); }}>취소</button>
         </div>
       )}
-      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--ink-mute)' }}>
-        💡 수강생이 최초 로그인할 때 직접 설정합니다. 잊어버린 경우 여기서 새로 지정하거나 초기화하세요.
+      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.6 }}>
+        💡 수강생이 최초 로그인할 때 직접 설정합니다. 잊어버린 경우<br/>
+        <b>수정</b> — 관리자가 새 비밀번호를 직접 지정 (수강생에게 전달 필요)<br/>
+        <b>초기화</b> — 비밀번호를 제거하여 다음 로그인이 "최초 입장" 흐름으로 진행
       </div>
     </div>
   );
