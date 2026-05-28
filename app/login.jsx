@@ -23,13 +23,24 @@ function LoginScreen({ onLogin }) {
 
   const ADMIN_PASSWORD = '1124';
 
+  // Supabase 비동기 부트스트랩 / 외부 동기화 완료 시 자동 리렌더
+  const [storeVersion, setStoreVersion] = useState(0);
+  useEffect(() => {
+    const unsubscribe = window.STORE.onChange(() => setStoreVersion(v => v + 1));
+    return unsubscribe;
+  }, []);
+
   const cohort = window.STUDENT_ROSTER[cohortId];
   const noActiveCohort = !cohort;
-  const students = cohort ? window.STORE.listStudents(cohortId) : [];
+  const students = useMemo(
+    () => cohort ? window.STORE.listStudents(cohortId) : [],
+    [cohort, cohortId, storeVersion]
+  );
   const filtered = useMemo(() => {
     if (!search.trim()) return students;
     return students.filter(s => s.name.includes(search.trim()));
   }, [students, search]);
+  const isLoading = students.length === 0 && cohort && (window.STORE_MODE === 'supabase' || window.STORE_MODE === 'gist') && storeVersion === 0;
 
   useEffect(() => {
     try {
@@ -210,9 +221,15 @@ function LoginScreen({ onLogin }) {
                 </button>
               );
             })}
-            {filtered.length === 0 && (
+            {filtered.length === 0 && isLoading && (
               <div className="empty" style={{ gridColumn: '1 / -1', padding: 24 }}>
-                검색 결과가 없습니다
+                <div className="loading-spinner" aria-label="로딩 중"></div>
+                <div style={{ marginTop: 12 }}>수강생 명단을 불러오는 중…</div>
+              </div>
+            )}
+            {filtered.length === 0 && !isLoading && (
+              <div className="empty" style={{ gridColumn: '1 / -1', padding: 24 }}>
+                {search.trim() ? '검색 결과가 없습니다' : '등록된 수강생이 없습니다'}
               </div>
             )}
           </div>
