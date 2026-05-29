@@ -822,6 +822,11 @@
     onChange(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
     _notify() { this._listeners.forEach(fn => { try { fn(); } catch(e){} }); }
 
+    /* ===== _save stub =====
+       LocalAdapter 의 cohort 메서드들이 this._save() 를 호출하므로 stub 필요.
+       Supabase 모드는 localStorage 미사용 — _notify 만 트리거. */
+    _save() { this._notify(); }
+
     /* ===== students ===== */
     listStudents(cohort) {
       const list = (cohort ? this.db.students.filter(s => s.cohort === cohort) : this.db.students).slice();
