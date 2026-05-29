@@ -630,13 +630,19 @@ function CohortsManagement({ onChange }) {
 
       {showAdd && (
         <AddCohortModal
-          onAdd={(payload) => {
+          onAdd={async (payload) => {
             try {
-              window.STORE.createCohort(payload);
+              const result = window.STORE.createCohort(payload);
+              // SupabaseAdapter면 Promise 반환 → DB 응답까지 대기
+              if (result && typeof result.then === 'function') {
+                await result;
+              }
               setShowAdd(false);
               refresh();
             } catch (e) {
-              alert(e.message || '추가 실패');
+              alert((e && e.message) || '추가 실패');
+              // 로컬 모드면 동기 throw, Supabase면 위 await에서 reject → 둘 다 catch
+              refresh(); // 롤백된 상태 반영
             }
           }}
           onClose={() => setShowAdd(false)} />

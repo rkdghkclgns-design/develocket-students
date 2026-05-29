@@ -1087,12 +1087,24 @@
       this._notify();
     }
     async createCohort(payload) {
+      // 1) 로컬(메모리)에 즉시 등록 → STUDENT_ROSTER + cohort_meta 갱신
       const r = LocalAdapter.prototype.createCohort.call(this, payload);
-      const meta = this.db.cohort_meta[r.id];
-      await this.client.from(SB_TABLES.cohorts).insert({
-        id: r.id, label: r.label, track: r.track, round: r.round, color: r.color,
-        custom: true, archived_at: null
-      });
+      // 2) UI 즉시 갱신 (상단바 셀렉트박스 / CohortsManagement 목록 등)
+      this._notify();
+      // 3) DB에 INSERT — 실패 시 로컬 롤백 + 에러 throw
+      try {
+        const { error } = await this.client.from(SB_TABLES.cohorts).insert({
+          id: r.id, label: r.label, track: r.track, round: r.round, color: r.color,
+          custom: true, archived_at: null
+        });
+        if (error) throw error;
+      } catch (err) {
+        // 롤백: STUDENT_ROSTER + cohort_meta 에서 제거
+        try { delete global.STUDENT_ROSTER[r.id]; } catch (e) {}
+        try { delete this.db.cohort_meta[r.id]; } catch (e) {}
+        this._notify();
+        throw new Error('Supabase 동기화 실패: ' + (err.message || err));
+      }
       this._notify();
       return r;
     }

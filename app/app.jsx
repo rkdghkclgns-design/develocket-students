@@ -17,6 +17,12 @@ function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [session, setSession] = useState(null);
   const [tab, setTab] = useState('daily'); // 'daily' | 'jobs' (student) — admin handles its own
+  // STORE 변경(기수 추가/아카이브 등) 시 상단바 셀렉트박스 등 자동 갱신
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    const unsub = window.STORE.onChange(() => forceUpdate(v => v + 1));
+    return unsub;
+  }, []);
 
   /* Apply tweaks (CSS variables) */
   useEffect(() => {
