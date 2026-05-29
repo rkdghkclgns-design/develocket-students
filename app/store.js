@@ -1091,17 +1091,44 @@
       const r = LocalAdapter.prototype.createCohort.call(this, payload);
       // 2) UI 즉시 갱신 (상단바 셀렉트박스 / CohortsManagement 목록 등)
       this._notify();
-      // 3) DB에 INSERT — 실패 시 로컬 롤백 + 에러 throw
+      // 3) DB에 INSERT — .select() 로 응답 row 보장
       try {
-        const { error } = await this.client.from(SB_TABLES.cohorts).insert({
-          id: r.id, label: r.label, track: r.track, round: r.round, color: r.color,
-          custom: true, archived_at: null
-        });
-        if (error) throw error;
+        const insertBody = {
+          id: r.id,
+          label: r.label,
+          track: r.track || '',
+          round: r.round || '',
+          color: r.color || '#7C5CFF',
+          custom: true,
+          archived_at: null
+        };
+        console.info('[createCohort] DB INSERT 시도:', insertBody);
+        const { data, error, status, statusText } = await this.client
+          .from(SB_TABLES.cohorts)
+          .insert(insertBody)
+          .select()
+          .single();
+        if (error) {
+          // 상세 정보로 에러 객체 강화
+          const detail = [
+            error.message,
+            error.hint && `hint: ${error.hint}`,
+            error.code && `code: ${error.code}`,
+            status && `status: ${status}`
+          ].filter(Boolean).join(' / ');
+          throw new Error(detail);
+        }
+        if (!data) {
+          throw new Error('DB 응답에 row 없음 (RLS 차단 가능성)');
+        }
+        console.info('[createCohort] DB INSERT 성공:', data);
       } catch (err) {
+        console.error('[createCohort] 실패:', err);
         // 롤백: STUDENT_ROSTER + cohort_meta 에서 제거
         try { delete global.STUDENT_ROSTER[r.id]; } catch (e) {}
-        try { delete this.db.cohort_meta[r.id]; } catch (e) {}
+        try {
+          if (this.db.cohort_meta) delete this.db.cohort_meta[r.id];
+        } catch (e) {}
         this._notify();
         throw new Error('Supabase 동기화 실패: ' + (err.message || err));
       }

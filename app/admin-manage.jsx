@@ -634,14 +634,25 @@ function CohortsManagement({ onChange }) {
             try {
               const result = window.STORE.createCohort(payload);
               // SupabaseAdapter면 Promise 반환 → DB 응답까지 대기
+              let saved;
               if (result && typeof result.then === 'function') {
-                await result;
+                saved = await result;
+              } else {
+                saved = result;
               }
+              // 성공 → 모달 닫기 + 토스트
               setShowAdd(false);
               refresh();
+              const label = (saved && saved.label) || payload.label || payload.id;
+              alert(`✓ "${label}" 기수가 등록되었습니다.\n\n이제 [수강생] 탭에서 학생을 추가하거나, 상단바 기수 셀렉트에서 전환할 수 있어요.`);
             } catch (e) {
-              alert((e && e.message) || '추가 실패');
-              // 로컬 모드면 동기 throw, Supabase면 위 await에서 reject → 둘 다 catch
+              const msg = (e && e.message) || String(e);
+              alert(
+                '❌ 기수 등록 실패\n\n' +
+                msg + '\n\n' +
+                '브라우저 콘솔(F12)에서 더 자세한 로그를 확인하세요.\n' +
+                '또는 강제 새로고침(Ctrl+Shift+R) 후 재시도해 보세요.'
+              );
               refresh(); // 롤백된 상태 반영
             }
           }}
@@ -741,11 +752,18 @@ function AddCohortModal({ onAdd, onClose }) {
     round: '1회차',
     color: '#7C5CFF'
   });
+  const [submitting, setSubmitting] = useState(false);
   function up(k, v) { setForm(f => ({ ...f, [k]: v })); }
-  function submit() {
+  async function submit() {
+    if (submitting) return;
     if (!form.id.trim()) { alert('기수 ID는 필수입니다 (예: 기획4기)'); return; }
     if (!form.label.trim()) { alert('기수명은 필수입니다'); return; }
-    onAdd(form);
+    setSubmitting(true);
+    try {
+      await onAdd(form);
+    } finally {
+      setSubmitting(false);
+    }
   }
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -789,9 +807,10 @@ function AddCohortModal({ onAdd, onClose }) {
               style={{ padding: 4, height: 36 }} />
           </div>
           <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, marginTop: 8 }}>
-            <button className="btn btn-secondary" onClick={onClose}>취소</button>
-            <button className="btn btn-primary" onClick={submit} style={{ flex: 1 }}>
-              <Icon.Plus /> 등록
+            <button className="btn btn-secondary" onClick={onClose} disabled={submitting}>취소</button>
+            <button className="btn btn-primary" onClick={submit} disabled={submitting}
+              style={{ flex: 1, opacity: submitting ? 0.7 : 1, cursor: submitting ? 'wait' : 'pointer' }}>
+              {submitting ? '⏳ Supabase 동기화 중…' : <><Icon.Plus /> 등록</>}
             </button>
           </div>
         </div>
