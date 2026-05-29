@@ -292,14 +292,17 @@
     listCohorts(opts = {}) {
       const includeArchived = !!opts.includeArchived;
       const onlyArchived = !!opts.onlyArchived;
+      const includeHidden = opts.includeHidden !== false; // 기본 true (관리 화면)
       const meta = this.db.cohort_meta || {};
       const ids = new Set([...Object.keys(global.STUDENT_ROSTER), ...Object.keys(meta)]);
       const out = [];
       ids.forEach(id => {
-        const m = meta[id] || { archived_at: null, custom: false };
+        const m = meta[id] || { archived_at: null, custom: false, hidden: false, sort_order: 100 };
         const archived = !!m.archived_at;
+        const hidden = !!m.hidden;
         if (onlyArchived && !archived) return;
         if (!includeArchived && !onlyArchived && archived) return;
+        if (!includeHidden && hidden) return;
         const r = global.STUDENT_ROSTER[id];
         if (!r) return;
         out.push({
@@ -310,9 +313,13 @@
           color: r.color,
           archived_at: m.archived_at || null,
           custom: !!m.custom,
+          hidden,
+          sort_order: typeof m.sort_order === 'number' ? m.sort_order : 100,
           studentCount: this.db.students.filter(s => s.cohort === id).length
         });
       });
+      // sort_order 오름차순 → 동일하면 label 기준
+      out.sort((a, b) => (a.sort_order - b.sort_order) || a.label.localeCompare(b.label, 'ko'));
       return out;
     }
     getCohort(id) {
@@ -354,6 +361,9 @@
       };
       global.STUDENT_ROSTER[id] = cohort;
       if (!this.db.cohort_meta) this.db.cohort_meta = {};
+      // 새 기수는 가장 뒤로 배치 (현재 최대 sort_order + 10)
+      const allOrders = Object.values(this.db.cohort_meta).map(m => m.sort_order || 0);
+      const nextOrder = (allOrders.length ? Math.max(...allOrders) : 0) + 10;
       this.db.cohort_meta[id] = {
         archived_at: null,
         custom: true,
@@ -361,6 +371,8 @@
         track: cohort.track,
         round: cohort.round,
         color: cohort.color,
+        sort_order: nextOrder,
+        hidden: false,
         created_at: new Date().toISOString()
       };
       this._save();
@@ -378,6 +390,36 @@
         if (k in patch && this.db.cohort_meta[id].custom) this.db.cohort_meta[id][k] = patch[k];
       });
       this._save();
+    }
+    /* ===== 노출 여부 토글 (archived와 별개) ===== */
+    setCohortHidden(id, hidden) {
+      if (!this.db.cohort_meta) this.db.cohort_meta = {};
+      if (!this.db.cohort_meta[id]) this.db.cohort_meta[id] = { archived_at: null, custom: false };
+      this.db.cohort_meta[id].hidden = !!hidden;
+      this._save();
+    }
+    /* ===== 순서 변경 ===== */
+    setCohortOrder(id, sortOrder) {
+      if (!this.db.cohort_meta) this.db.cohort_meta = {};
+      if (!this.db.cohort_meta[id]) this.db.cohort_meta[id] = { archived_at: null, custom: false };
+      this.db.cohort_meta[id].sort_order = sortOrder;
+      this._save();
+    }
+    /* 현재 활성 기수들 사이에서 한 기수를 위/아래로 한 칸 이동 (Supabase / LocalStorage 공통 로직) */
+    moveCohort(id, direction) {
+      const list = this.listCohorts({ includeArchived: false, includeHidden: true });
+      const idx = list.findIndex(c => c.id === id);
+      if (idx < 0) return null;
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= list.length) return null;
+      const me = list[idx];
+      const other = list[targetIdx];
+      // swap sort_order
+      const myOrder = me.sort_order;
+      const otherOrder = other.sort_order;
+      this.setCohortOrder(me.id, otherOrder);
+      this.setCohortOrder(other.id, myOrder);
+      return { moved: me.id, swappedWith: other.id, newOrder: otherOrder, otherNewOrder: myOrder };
     }
 
     /* ===== students ===== */
@@ -777,7 +819,10 @@
         });
         this.db.cohort_meta[c.id] = {
           archived_at: c.archived_at, custom: !!c.custom,
-          label: c.label, track: c.track, round: c.round, color: c.color
+          label: c.label, track: c.track, round: c.round, color: c.color,
+          // 신규: 표기 순서 + 노출 여부 (column이 없는 구버전 DB도 호환)
+          sort_order: typeof c.sort_order === 'number' ? c.sort_order : 100,
+          hidden: !!c.hidden
         };
       });
 
@@ -816,7 +861,9 @@
       });
       this.db.cohort_meta[c.id] = {
         archived_at: c.archived_at, custom: !!c.custom,
-        label: c.label, track: c.track, round: c.round, color: c.color
+        label: c.label, track: c.track, round: c.round, color: c.color,
+        sort_order: typeof c.sort_order === 'number' ? c.sort_order : 100,
+        hidden: !!c.hidden
       };
     }
     onChange(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
@@ -1098,6 +1145,8 @@
       this._notify();
       // 3) DB에 INSERT — .select() 로 응답 row 보장
       try {
+        // LocalAdapter.createCohort 에서 nextOrder 가 계산되어 cohort_meta 에 저장됨
+        const localMeta = (this.db.cohort_meta || {})[r.id] || {};
         const insertBody = {
           id: r.id,
           label: r.label,
@@ -1105,7 +1154,9 @@
           round: r.round || '',
           color: r.color || '#7C5CFF',
           custom: true,
-          archived_at: null
+          archived_at: null,
+          sort_order: typeof localMeta.sort_order === 'number' ? localMeta.sort_order : 100,
+          hidden: false
         };
         console.info('[createCohort] DB INSERT 시도:', insertBody);
         const { data, error, status, statusText } = await this.client
@@ -1148,6 +1199,55 @@
         await this.client.from(SB_TABLES.cohorts).update(dbPatch).eq('id', id);
       }
       this._notify();
+    }
+    /* 노출 토글 */
+    async setCohortHidden(id, hidden) {
+      LocalAdapter.prototype.setCohortHidden.call(this, id, hidden);
+      try {
+        const { error } = await this.client.from(SB_TABLES.cohorts)
+          .update({ hidden: !!hidden }).eq('id', id);
+        if (error) throw error;
+      } catch (err) {
+        // 롤백
+        LocalAdapter.prototype.setCohortHidden.call(this, id, !hidden);
+        this._notify();
+        throw new Error('Supabase 동기화 실패: ' + (err.message || err));
+      }
+      this._notify();
+    }
+    /* 순서 직접 설정 */
+    async setCohortOrder(id, sortOrder) {
+      LocalAdapter.prototype.setCohortOrder.call(this, id, sortOrder);
+      try {
+        const { error } = await this.client.from(SB_TABLES.cohorts)
+          .update({ sort_order: sortOrder }).eq('id', id);
+        if (error) throw error;
+      } catch (err) {
+        this._notify();
+        throw new Error('Supabase 동기화 실패: ' + (err.message || err));
+      }
+      this._notify();
+    }
+    /* 위/아래로 한 칸 이동 (swap) — 두 row update를 동시에 트랜잭션 */
+    async moveCohort(id, direction) {
+      const result = LocalAdapter.prototype.moveCohort.call(this, id, direction);
+      if (!result) return null;
+      try {
+        // Supabase는 transaction을 client에서 직접 못 해서 순차 update
+        const u1 = await this.client.from(SB_TABLES.cohorts)
+          .update({ sort_order: result.newOrder }).eq('id', result.moved);
+        if (u1.error) throw u1.error;
+        const u2 = await this.client.from(SB_TABLES.cohorts)
+          .update({ sort_order: result.otherNewOrder }).eq('id', result.swappedWith);
+        if (u2.error) throw u2.error;
+      } catch (err) {
+        // 롤백: 역방향 swap
+        LocalAdapter.prototype.moveCohort.call(this, id, direction === 'up' ? 'down' : 'up');
+        this._notify();
+        throw new Error('Supabase 동기화 실패: ' + (err.message || err));
+      }
+      this._notify();
+      return result;
     }
 
     resetAll() {
@@ -1365,11 +1465,16 @@
   global.createGistForSync = createGistForSync;
 
   /* ----- Cohort UI 헬퍼: 아카이브된 기수는 기본적으로 숨김 ----- */
+  /* 외부 노출용: 아카이브 + 숨김 모두 제외, sort_order 적용된 활성 기수 */
   global.getActiveCohortEntries = function () {
-    return adapter.listCohorts({ includeArchived: false })
+    return adapter.listCohorts({ includeArchived: false, includeHidden: false })
       .map(c => [c.id, global.STUDENT_ROSTER[c.id]]);
   };
   global.getActiveCohortIds = function () {
-    return adapter.listCohorts({ includeArchived: false }).map(c => c.id);
+    return adapter.listCohorts({ includeArchived: false, includeHidden: false }).map(c => c.id);
+  };
+  /* 관리 화면용: 숨김 포함 (아카이브는 제외) */
+  global.getManageCohorts = function () {
+    return adapter.listCohorts({ includeArchived: false, includeHidden: true });
   };
 })(window);

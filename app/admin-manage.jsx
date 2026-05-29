@@ -565,7 +565,8 @@ function CohortsManagement({ onChange }) {
 
   function refresh() { force(x => x + 1); onChange && onChange(); }
 
-  const active = window.STORE.listCohorts({ includeArchived: false });
+  // 관리 화면 — 숨김 기수도 포함해서 표시 (아이콘으로 구분)
+  const active = window.STORE.listCohorts({ includeArchived: false, includeHidden: true });
   const archived = window.STORE.listCohorts({ onlyArchived: true });
 
   function handleArchive(c) {
@@ -606,10 +607,33 @@ function CohortsManagement({ onChange }) {
           </div>
         ) : (
           <div className="manage-list">
-            {active.map(c => (
+            {active.map((c, idx) => (
               <CohortRow key={c.id} cohort={c}
                 onArchive={() => handleArchive(c)}
-                onUpdate={refresh} />
+                onUpdate={refresh}
+                onMove={async (dir) => {
+                  try {
+                    const result = window.STORE.moveCohort(c.id, dir);
+                    if (result && typeof result.then === 'function') await result;
+                    refresh();
+                  } catch (e) {
+                    alert('순서 변경 실패: ' + (e.message || e));
+                    refresh();
+                  }
+                }}
+                onToggleHidden={async () => {
+                  try {
+                    const result = window.STORE.setCohortHidden(c.id, !c.hidden);
+                    if (result && typeof result.then === 'function') await result;
+                    refresh();
+                  } catch (e) {
+                    alert('노출 상태 변경 실패: ' + (e.message || e));
+                    refresh();
+                  }
+                }}
+                isFirst={idx === 0}
+                isLast={idx === active.length - 1}
+              />
             ))}
           </div>
         )}
@@ -662,8 +686,10 @@ function CohortsManagement({ onChange }) {
   );
 }
 
-function CohortRow({ cohort, archived, onArchive, onRestore, onUpdate }) {
+function CohortRow({ cohort, archived, onArchive, onRestore, onUpdate, onMove, onToggleHidden, isFirst, isLast }) {
   const [editing, setEditing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuBtnRef = useRef(null);
   const [draft, setDraft] = useState({
     label: cohort.label,
     track: cohort.track,
@@ -671,44 +697,113 @@ function CohortRow({ cohort, archived, onArchive, onRestore, onUpdate }) {
     color: cohort.color
   });
 
+  // 메뉴 바깥 클릭 시 닫기
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onClickOutside(e) {
+      if (menuBtnRef.current && !menuBtnRef.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    }
+    function onKey(e) { if (e.key === 'Escape') setMenuOpen(false); }
+    document.addEventListener('mousedown', onClickOutside);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
   function save() {
-    window.STORE.updateCohort(cohort.id, draft);
-    setEditing(false);
-    onUpdate();
+    try {
+      const result = window.STORE.updateCohort(cohort.id, draft);
+      if (result && typeof result.then === 'function') {
+        result.then(() => { setEditing(false); onUpdate(); })
+              .catch(e => alert('저장 실패: ' + (e.message || e)));
+      } else {
+        setEditing(false);
+        onUpdate();
+      }
+    } catch (e) {
+      alert('저장 실패: ' + (e.message || e));
+    }
+  }
+
+  function pick(fn) {
+    setMenuOpen(false);
+    if (fn) fn();
   }
 
   if (!editing) {
+    const hidden = !!cohort.hidden;
     return (
-      <div className="manage-row" style={{ alignItems: 'flex-start', opacity: archived ? 0.7 : 1 }}>
+      <div className="manage-row cohort-row" style={{ alignItems: 'flex-start', opacity: archived ? 0.7 : (hidden ? 0.55 : 1) }}>
         <div style={{
           width: 12, height: 12, borderRadius: 4, marginTop: 4,
           background: cohort.color || '#7C5CFF',
           boxShadow: '0 0 0 3px color-mix(in oklab, ' + (cohort.color || '#7C5CFF') + ' 18%, transparent)'
         }}></div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {cohort.label}
             {archived && <span className="pill" style={{ background: 'var(--bg-2)', color: 'var(--ink-mute)', fontSize: 10 }}>아카이브</span>}
+            {hidden && !archived && <span className="pill" style={{ background: 'var(--alert-warn-bg)', color: 'var(--alert-warn)', fontSize: 10 }}>🙈 숨김</span>}
             {cohort.custom && <span className="pill" style={{ background: 'var(--brand-primary-soft)', color: 'var(--brand-primary-deep)', fontSize: 10 }}>신규</span>}
             <span className="pill" style={{ background: 'var(--surface-2)', color: 'var(--ink-soft)', fontSize: 10 }}>{cohort.id}</span>
+            {typeof cohort.sort_order === 'number' && (
+              <span className="pill" style={{ background: 'var(--surface-2)', color: 'var(--ink-mute)', fontSize: 10 }}>#{cohort.sort_order}</span>
+            )}
           </div>
           <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
             {cohort.track || '—'} · {cohort.round || '—'} · 수강생 <b>{cohort.studentCount}</b>명
           </div>
         </div>
-        {!archived && (
-          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)} title="기수 정보 수정">
-            <Icon.Edit /> 편집
-          </button>
-        )}
-        {!archived ? (
-          <button className="btn btn-ghost btn-sm" onClick={onArchive} title="기수 종료(아카이브)" style={{ color: 'var(--alert-danger)' }}>
-            🗂️ 종료
-          </button>
-        ) : (
+
+        {archived ? (
           <button className="btn btn-secondary btn-sm" onClick={onRestore} title="복구">
             ↺ 복구
           </button>
+        ) : (
+          /* 액션 팝업 메뉴 */
+          <div style={{ position: 'relative' }} ref={menuBtnRef}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setMenuOpen(o => !o)}
+              title="기수 액션"
+              aria-haspopup="true"
+              aria-expanded={menuOpen}
+              style={{ minWidth: 36, padding: '6px 10px', fontWeight: 700 }}
+            >
+              ⋯ 메뉴
+            </button>
+            {menuOpen && (
+              <div className="cohort-menu" role="menu">
+                <button className="cohort-menu-item" role="menuitem" onClick={() => pick(() => setEditing(true))}>
+                  <Icon.Edit /> <span>편집</span>
+                </button>
+                <div className="cohort-menu-sep"></div>
+                <button className="cohort-menu-item" role="menuitem"
+                  disabled={isFirst}
+                  onClick={() => pick(() => onMove && onMove('up'))}>
+                  ⬆️ <span>위로 이동</span>
+                </button>
+                <button className="cohort-menu-item" role="menuitem"
+                  disabled={isLast}
+                  onClick={() => pick(() => onMove && onMove('down'))}>
+                  ⬇️ <span>아래로 이동</span>
+                </button>
+                <div className="cohort-menu-sep"></div>
+                <button className="cohort-menu-item" role="menuitem"
+                  onClick={() => pick(onToggleHidden)}>
+                  {hidden ? <>👁️ <span>다시 표시</span></> : <>🙈 <span>로그인/셀렉트에서 숨김</span></>}
+                </button>
+                <div className="cohort-menu-sep"></div>
+                <button className="cohort-menu-item danger" role="menuitem" onClick={() => pick(onArchive)}>
+                  🗂️ <span>기수 종료(아카이브)</span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     );

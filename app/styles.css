@@ -2122,3 +2122,62 @@ input, textarea, select { font-family: inherit; }
   .tweaks-panel, .supabase-note { display: none !important; }
   .page { padding: 0; }
 }
+
+/* ==========================================================================
+   🗂️ 기수 액션 팝업 메뉴
+   ========================================================================== */
+.cohort-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 32px rgba(20, 12, 50, 0.15);
+  padding: 6px;
+  z-index: 100;
+  animation: cohort-menu-pop 0.14s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes cohort-menu-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.cohort-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s var(--ease);
+}
+.cohort-menu-item:hover:not(:disabled) {
+  background: var(--brand-primary-soft);
+  color: var(--brand-primary-deep);
+}
+.cohort-menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.cohort-menu-item.danger {
+  color: var(--alert-danger);
+}
+.cohort-menu-item.danger:hover:not(:disabled) {
+  background: var(--alert-danger-bg);
+  color: var(--alert-danger);
+}
+.cohort-menu-item span { font-weight: 600; flex: 1; }
+.cohort-menu-sep {
+  height: 1px; background: var(--line-soft); margin: 4px 6px;
+}
+
+/* 모바일: 메뉴를 화면 가운데 또는 우측에서 가까이 정렬 */
+@media (max-width: 720px) {
+  .cohort-menu { min-width: 200px; right: 0; }
+}
