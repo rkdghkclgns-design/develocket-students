@@ -184,7 +184,7 @@ function DailyReportTab({ student }) {
             {driveFlash && <span className="pill" style={{ marginLeft: 8, background: 'var(--alert-fresh-bg)', color: 'var(--alert-fresh)', fontSize: 10 }}>✓ 저장됨</span>}
           </div>
           {!driveEdit && driveLink ? (
-            <a href={driveLink} target="_blank" rel="noopener" className="drive-pin-url">
+            <a href={safeHref(driveLink)} target="_blank" rel="noopener" className="drive-pin-url">
               {driveLink} <Icon.External />
             </a>
           ) : (
@@ -358,7 +358,7 @@ function DailyReportTab({ student }) {
                 {(draft.attachments || []).map((a, i) => (
                   <span key={i} className="attachment-chip">
                     {a.type === 'image' ? '🖼️' : <Icon.Link />}
-                    <a href={a.url} target="_blank" rel="noopener">{a.label}</a>
+                    <a href={safeHref(a.url)} target="_blank" rel="noopener">{a.label}</a>
                     <button onClick={() => removeAttachment(i)}><Icon.X /></button>
                   </span>
                 ))}
@@ -459,7 +459,7 @@ function HistoryItem({ report }) {
                 {report.attachments.map((a, i) => (
                   <span key={i} className="attachment-chip">
                     {a.type === 'image' ? '🖼️' : <Icon.Link />}
-                    <a href={a.url} target="_blank" rel="noopener">{a.label}</a>
+                    <a href={safeHref(a.url)} target="_blank" rel="noopener">{a.label}</a>
                   </span>
                 ))}
               </div>
@@ -495,12 +495,13 @@ function AdminFeedbackCard({ student }) {
     return window.STORE.onChange(reload);
   }, [student.id]);
 
-  // 이 카드를 보는 순간 = 학생이 멘토 메시지를 읽음 → 읽음 커서 갱신
+  // 이 카드를 보는 순간/새 메시지 도착 시 = 학생이 멘토 메시지를 읽음 → 읽음 커서 갱신
+  // (deps 로 매 렌더 호출 방지; 마킹 후 unread=0 이라 반복 안 함)
   useEffect(() => {
     if (window.STORE.getUnreadCommentCount(student.id, 'student') > 0) {
       Promise.resolve(window.STORE.markCommentsRead(student.id, 'student')).catch(() => {});
     }
-  });
+  }, [student.id, comments.length]);
 
   function sendReply() {
     const text = replyText.trim();

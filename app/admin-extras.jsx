@@ -247,7 +247,7 @@ function StudentAdminPanel({ student, onChange }) {
               value={fields.drive_link}
               onChange={e => setF('drive_link', e.target.value)} />
             {fields.drive_link && (
-              <a href={fields.drive_link} target="_blank" rel="noopener" className="btn btn-secondary btn-sm">
+              <a href={safeHref(fields.drive_link)} target="_blank" rel="noopener" className="btn btn-secondary btn-sm">
                 <Icon.External /> 열기
               </a>
             )}

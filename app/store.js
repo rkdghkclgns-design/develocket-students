@@ -34,6 +34,8 @@
   // 문서 종류 라벨 (알림 메시지 등에서 사용)
   const DOC_KIND_LABELS = { resume: '이력서', cover_letter: '자소서', portfolio: '포폴' };
   const docKindLabel = (k) => DOC_KIND_LABELS[k] || k || '문서';
+  // 문서 상태 허용값 (학생: editing/review_requested, 관리자: revision/complete, 초기: none)
+  const DOC_STATUSES = ['none', 'editing', 'review_requested', 'revision', 'complete'];
 
   /* ---------------- LocalStorage Adapter ---------------- */
   class LocalAdapter {
@@ -646,14 +648,14 @@
         return existing;
       }
       const created = {
-        id: uid('doc'),
+        id: doc.id || uid('doc'),
         student_id: doc.student_id,
         kind: doc.kind || 'resume',
         title: doc.title || '',
         link: doc.link || '',
         file_url: doc.file_url || '',
         file_name: doc.file_name || '',
-        status: doc.status || 'none',
+        status: DOC_STATUSES.includes(doc.status) ? doc.status : 'none',
         created_at: now,
         updated_at: now
       };
@@ -666,6 +668,7 @@
       this._save();
     }
     setDocumentStatus(id, status) {
+      if (!DOC_STATUSES.includes(status)) return;   // 허용된 상태값만(가비지/우회 방지)
       const d = (this.db.documents || []).find(x => x.id === id);
       if (d) { d.status = status; d.updated_at = new Date().toISOString(); this._save(); }
       return d;
@@ -952,6 +955,12 @@
       if (this.db.attendance) {
         this.db.attendance = this.db.attendance.filter(a => a.student_id !== id);
       }
+      // 2026-06 신규 컬렉션도 정리
+      this.db.documents       = (this.db.documents || []).filter(d => d.student_id !== id);
+      this.db.career_requests = (this.db.career_requests || []).filter(r => r.student_id !== id);
+      this.db.evaluations     = (this.db.evaluations || []).filter(e => e.student_id !== id);
+      this.db.counseling      = (this.db.counseling || []).filter(c => c.student_id !== id);
+      this.db.comment_reads   = (this.db.comment_reads || []).filter(r => r.student_id !== id);
       this._save();
     }
 
@@ -1258,12 +1267,18 @@
       return this.updateStudent(id, filtered);
     }
     async deleteStudent(id) {
+      // dl_* FK 는 on delete cascade → DB 자식행 자동 삭제. 메모리 캐시도 동일하게 정리.
       await this.client.from(SB_TABLES.students).delete().eq('id', id);
       this.db.students = this.db.students.filter(s => s.id !== id);
       this.db.daily_reports = this.db.daily_reports.filter(r => r.student_id !== id);
       this.db.jobs = this.db.jobs.filter(j => j.student_id !== id);
       this.db.comments = this.db.comments.filter(c => c.student_id !== id);
       this.db.attendance = this.db.attendance.filter(a => a.student_id !== id);
+      this.db.documents       = (this.db.documents || []).filter(d => d.student_id !== id);
+      this.db.career_requests = (this.db.career_requests || []).filter(r => r.student_id !== id);
+      this.db.evaluations     = (this.db.evaluations || []).filter(e => e.student_id !== id);
+      this.db.counseling      = (this.db.counseling || []).filter(c => c.student_id !== id);
+      this.db.comment_reads   = (this.db.comment_reads || []).filter(r => r.student_id !== id);
       this._notify();
     }
 
@@ -1452,6 +1467,7 @@
       this._notify();
     }
     async setDocumentStatus(id, status) {
+      if (!DOC_STATUSES.includes(status)) return;   // 허용된 상태값만
       const { data, error } = await this.client.from(SB_TABLES.documents)
         .update({ status }).eq('id', id).select().single();
       if (error) { console.warn('setDocumentStatus error', error); return; }

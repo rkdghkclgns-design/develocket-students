@@ -1344,7 +1344,7 @@ function AdminReportItem({ report, studentId, onChange }) {
                 {report.attachments.map((a, i) => (
                   <span key={i} className="attachment-chip">
                     {a.type === 'image' ? '🖼️' : <Icon.Link />}
-                    <a href={a.url} target="_blank" rel="noopener">{a.label}</a>
+                    <a href={safeHref(a.url)} target="_blank" rel="noopener">{a.label}</a>
                   </span>
                 ))}
               </div>
@@ -1391,7 +1391,7 @@ function AdminReportItem({ report, studentId, onChange }) {
                 {report.attachments.map((a, i) => (
                   <span key={i} className="attachment-chip">
                     {a.type === 'image' ? '🖼️' : <Icon.Link />}
-                    <a href={a.url} target="_blank" rel="noopener">{a.label}</a>
+                    <a href={safeHref(a.url)} target="_blank" rel="noopener">{a.label}</a>
                   </span>
                 ))}
               </div>

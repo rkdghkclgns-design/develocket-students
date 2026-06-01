@@ -13,16 +13,24 @@
       .replace(/"/g, '&quot;');
   }
 
+  // 마크다운 링크/이미지 URL 살균 — javascript:/vbscript:/data: 등 위험 스킴 차단(저장형 XSS 방지)
+  // 스킴이 있으면 http/https/mailto 만 허용, 스킴 없는 상대/앵커 URL 은 통과
+  function mdSafeUrl(url) {
+    const u = String(url).trim();
+    if (/^[a-z][a-z0-9+.\-]*:/i.test(u) && !/^(https?|mailto):/i.test(u)) return '#';
+    return u;
+  }
+
   function inline(s) {
     let t = escapeHtml(s);
     // inline code first to protect inside
     t = t.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
     // images ![alt](url)
     t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, url) =>
-      `<img src="${url}" alt="${alt}" />`);
+      `<img src="${mdSafeUrl(url)}" alt="${alt}" />`);
     // links [text](url)
     t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, txt, url) =>
-      `<a href="${url}" target="_blank" rel="noopener noreferrer">${txt}</a>`);
+      `<a href="${mdSafeUrl(url)}" target="_blank" rel="noopener noreferrer">${txt}</a>`);
     // bold **x** or __x__
     t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     t = t.replace(/__([^_]+)__/g, '<strong>$1</strong>');
