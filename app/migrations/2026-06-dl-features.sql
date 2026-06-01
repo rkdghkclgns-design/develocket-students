@@ -24,7 +24,8 @@
 --   * 기존 job_status enum / getDashboardRows 계산은 건드리지 않는다(회귀 방지).
 -- ============================================================================
 
-create extension if not exists "uuid-ossp";
+-- 주의: 기존 dl_* 테이블의 id 는 text (store.js 의 uid() 가 생성하는 'doc_xxx' 형태).
+-- 따라서 신규 테이블의 id / student_id 도 text 로 맞춘다(앱이 id 를 직접 제공).
 
 -- updated_at 자동 갱신 함수 (이미 있으면 교체) — dl_documents / dl_evaluations 에서 사용
 create or replace function touch_updated_at()
@@ -39,8 +40,8 @@ $$ language plpgsql;
 -- A. 문서 관리 (이력서 / 자소서 / 포폴)
 -- ============================================================================
 create table if not exists dl_documents (
-  id          uuid primary key default uuid_generate_v4(),
-  student_id  uuid not null references dl_students(id) on delete cascade,
+  id          text primary key,
+  student_id  text not null references dl_students(id) on delete cascade,
   kind        text not null,                 -- 'resume' | 'cover_letter' | 'portfolio' | <자유>
   title       text,
   link        text,                          -- 구글드라이브 등 외부 링크(대용량 권장)
@@ -78,8 +79,8 @@ alter table dl_students add column if not exists job_pref jsonb;
 -- 변경 요청(감사/경합 안전): 최초 선택은 즉시 승인되어 dl_students.job_pref 에 기록되고,
 -- 이후 변경은 여기 'pending' 으로 쌓여 관리자가 승인/반려한다.
 create table if not exists dl_career_change_requests (
-  id            uuid primary key default uuid_generate_v4(),
-  student_id    uuid not null references dl_students(id) on delete cascade,
+  id            text primary key,
+  student_id    text not null references dl_students(id) on delete cascade,
   choices       jsonb not null,                   -- 제안된 [c1,c2,c3]
   status        text not null default 'pending',  -- 'pending' | 'approved' | 'rejected'
   requested_at  timestamptz default now(),
@@ -96,8 +97,8 @@ create unique index if not exists uniq_dl_ccr_pending
 -- B-2. 훈련생 평가 (강사별, 훈련생 비공개)
 -- ============================================================================
 create table if not exists dl_evaluations (
-  id          uuid primary key default uuid_generate_v4(),
-  student_id  uuid not null references dl_students(id) on delete cascade,
+  id          text primary key,
+  student_id  text not null references dl_students(id) on delete cascade,
   evaluator   text not null,        -- 강사명
   goal        text,                 -- 목표
   content     text,                 -- 평가 내용(마크다운)
@@ -116,8 +117,8 @@ create trigger trg_dl_evaluations_updated_at
 -- B-3. 취업면담 이력 (훈련생 비공개)
 -- ============================================================================
 create table if not exists dl_counseling (
-  id          uuid primary key default uuid_generate_v4(),
-  student_id  uuid not null references dl_students(id) on delete cascade,
+  id          text primary key,
+  student_id  text not null references dl_students(id) on delete cascade,
   date        date not null,
   counselor   text not null,
   content     text,                 -- 면담 내용(마크다운)
@@ -137,7 +138,7 @@ alter table dl_jobs add column if not exists pipeline_stage text;               
 -- D. 코멘트 양방향 읽음 커서 (스레드 단위)
 -- ============================================================================
 create table if not exists dl_comment_reads (
-  student_id      uuid primary key references dl_students(id) on delete cascade,
+  student_id      text primary key references dl_students(id) on delete cascade,
   admin_read_at   timestamptz,
   student_read_at timestamptz
 );
