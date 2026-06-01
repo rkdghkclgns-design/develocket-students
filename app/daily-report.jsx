@@ -479,16 +479,26 @@ window.DailyReportTab = DailyReportTab;
    ========================================================================== */
 function AdminFeedbackCard({ student }) {
   const [comments, setComments] = useState([]);
+  const [readState, setReadState] = useState({ admin_read_at: null, student_read_at: null });
   const [replyText, setReplyText] = useState('');
   const [showReply, setShowReply] = useState(false);
 
   function reload() {
-    setComments(window.STORE.listComments(student.id, { viewerRole: 'student' }));
+    // 최신 메시지부터 (역순)
+    setComments(window.STORE.listComments(student.id, { viewerRole: 'student', order: 'desc' }));
+    setReadState(window.STORE.getCommentReadState(student.id));
   }
   useEffect(() => {
     reload();
     return window.STORE.onChange(reload);
   }, [student.id]);
+
+  // 이 카드를 보는 순간 = 학생이 멘토 메시지를 읽음 → 읽음 커서 갱신
+  useEffect(() => {
+    if (window.STORE.getUnreadCommentCount(student.id, 'student') > 0) {
+      Promise.resolve(window.STORE.markCommentsRead(student.id, 'student')).catch(() => {});
+    }
+  });
 
   function sendReply() {
     const text = replyText.trim();
@@ -531,6 +541,10 @@ function AdminFeedbackCard({ student }) {
               </span>
               {' · '}
               {new Date(c.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              {/* 내가(학생) 보낸 메시지를 멘토가 읽었는지 */}
+              {c.author_role === 'student' && (
+                <ReadReceipt read={isCommentReadByCounterparty(c, readState)} />
+              )}
             </div>
             <MarkdownView text={c.text} />
           </div>

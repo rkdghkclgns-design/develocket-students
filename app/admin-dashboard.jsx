@@ -540,7 +540,8 @@ function KanbanLayout({ rows, threshold, onPick }) {
 /* ============= Detail Drawer ============= */
 function StudentDetail({ row, threshold, onClose, onUpdate }) {
   const s = row.student;
-  const [comments, setComments] = useState(window.STORE.listComments(s.id));
+  const [comments, setComments] = useState(window.STORE.listComments(s.id, { order: 'desc' }));
+  const [cReadState, setCReadState] = useState(window.STORE.getCommentReadState(s.id));
   const [newComment, setNewComment] = useState('');
   const [newVisibility, setNewVisibility] = useState('both');
   const [reports, setReports] = useState(window.STORE.listReports(s.id));
@@ -549,18 +550,35 @@ function StudentDetail({ row, threshold, onClose, onUpdate }) {
 
   function reloadJobs() { setJobs(window.STORE.listJobs(s.id)); }
   function reloadReports() { setReports(window.STORE.listReports(s.id)); }
+  function reloadComments() {
+    setComments(window.STORE.listComments(s.id, { order: 'desc' }));   // 최신순
+    setCReadState(window.STORE.getCommentReadState(s.id));
+  }
+
+  // 관리자가 코멘트 탭을 열면 = 학생 메시지를 읽음 → 읽음 커서 갱신(알림에서도 사라짐)
+  useEffect(() => {
+    if (tab === 'comments' && window.STORE.getUnreadCommentCount(s.id, 'admin') > 0) {
+      Promise.resolve(window.STORE.markCommentsRead(s.id, 'admin')).then(() => {
+        setCReadState(window.STORE.getCommentReadState(s.id));
+        onUpdate();
+      }).catch(() => {});
+    }
+  }, [tab, s.id, comments.length]);
+
+  // 다른 곳/실시간 변경(학생 읽음, 새 코멘트) → 코멘트·읽음표시 라이브 반영
+  useEffect(() => window.STORE.onChange(reloadComments), [s.id]);
 
   function addComment(visibility = 'both') {
     const text = newComment.trim();
     if (!text) return;
     window.STORE.addComment(s.id, '관리자', text, { role: 'admin', visibility });
-    setComments(window.STORE.listComments(s.id));
+    reloadComments();
     setNewComment('');
     onUpdate();
   }
   function delComment(id) {
     window.STORE.deleteComment(id);
-    setComments(window.STORE.listComments(s.id));
+    reloadComments();
     onUpdate();
   }
 
@@ -696,6 +714,10 @@ function StudentDetail({ row, threshold, onClose, onUpdate }) {
                       }}>
                         {c.visibility === 'admin-only' ? '🔒 관리자만' : '👁 학생도 보임'}
                       </span>
+                    )}
+                    {/* 내가(관리자) 보낸, 학생에게 보이는 메시지를 학생이 읽었는지 */}
+                    {c.author_role !== 'student' && c.visibility !== 'admin-only' && (
+                      <ReadReceipt read={isCommentReadByCounterparty(c, cReadState)} />
                     )}
                     <button className="btn btn-ghost btn-sm" style={{ float: 'right', padding: '2px 6px' }} onClick={() => delComment(c.id)}>
                       <Icon.X />

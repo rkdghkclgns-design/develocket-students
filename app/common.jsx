@@ -235,10 +235,31 @@ function ProgressBar({ value }) {
   );
 }
 
+/* ----------- 코멘트 읽음 표시 (양방향 read receipt) -----------
+   relative to the comment's author, has the *counterparty* read it?
+   - 학생이 쓴 코멘트  → 관리자(admin_read_at) 가 읽었는가
+   - 관리자가 쓴 코멘트 → 학생(student_read_at) 가 읽었는가
+   readState = STORE.getCommentReadState(studentId) = { admin_read_at, student_read_at }
+*/
+function isCommentReadByCounterparty(comment, readState) {
+  if (!readState) return false;
+  const cursor = comment.author_role === 'student' ? readState.admin_read_at : readState.student_read_at;
+  return !!(cursor && comment.created_at <= cursor);
+}
+/* 내가 보낸 메시지에 붙는 읽음/안읽음 뱃지 */
+function ReadReceipt({ read }) {
+  return (
+    <span className={'read-receipt ' + (read ? 'is-read' : 'is-unread')}>
+      {read ? '✓✓ 읽음' : '✓ 안읽음'}
+    </span>
+  );
+}
+
 Object.assign(window, {
   Avatar, Icon, MarkdownEditor, MarkdownView,
   StatusPicker, StatusPill, MoodPicker,
   ElapsedBadge, elapsedTier, Drawer, ProgressBar,
+  ReadReceipt, isCommentReadByCounterparty,
   STATUS_OPTIONS, MOODS, MOOD_SCALE,
   normalizeMoodLevel, moodIcon, getMoodEntry
 });

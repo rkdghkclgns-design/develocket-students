@@ -1173,6 +1173,17 @@ input, textarea, select { font-family: inherit; }
 .comment-author { font-weight: 700; color: var(--ink); }
 .comment-form { display: flex; gap: 6px; margin-top: 10px; }
 .comment-form input { flex: 1; }
+/* 양방향 읽음 표시 */
+.read-receipt {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.read-receipt.is-read   { background: var(--alert-fresh-bg, #e6f4ea); color: var(--alert-fresh, #1a7f37); }
+.read-receipt.is-unread { background: var(--surface-3, #eee);        color: var(--ink-mute, #888); }
 
 /* Big stat / chart */
 .chart-card { padding: 20px; }
