@@ -225,6 +225,8 @@ function DailyReportTab({ student }) {
         </div>
       </div>
 
+      <CareerPrefCard student={student} />
+
       <div className="daily-grid">
         {/* LEFT: 작성 */}
         <div>

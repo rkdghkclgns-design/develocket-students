@@ -1282,6 +1282,40 @@ input, textarea, select { font-family: inherit; }
 .funnel-rate { font-size: 11px; color: var(--ink-mute); font-weight: 600; }
 .funnel-arrow { font-size: 18px; color: var(--ink-faint); font-weight: 700; }
 
+/* ============= 희망 직군 ============= */
+.career-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.career-chip {
+  padding: 4px 12px; border-radius: 999px;
+  background: var(--brand-primary-soft, #eee6ff); color: var(--brand-primary-deep, var(--brand-primary));
+  font-size: 13px; font-weight: 600;
+}
+.career-pending {
+  margin-top: 10px; padding: 8px 12px; border-radius: var(--r-md);
+  background: var(--alert-warn-bg, #fef3cd); color: var(--alert-warn, #9a6700);
+  font-size: 12px; font-weight: 600;
+}
+.career-admin { padding: 4px 0; }
+.career-pending-admin {
+  margin-top: 10px; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--alert-warn-bg, #fef3cd); border: 1px solid color-mix(in oklab, var(--alert-warn) 30%, var(--line));
+}
+
+/* ============= 훈련생 평가 / 취업면담 ============= */
+.eval-list, .counsel-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.eval-card, .counsel-card {
+  border: 1px solid var(--line-soft); border-radius: var(--r-md);
+  background: var(--surface-2); padding: 10px 12px;
+}
+.eval-head, .counsel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.eval-evaluator, .counsel-date { font-weight: 700; font-size: 13px; color: var(--ink); }
+.counsel-by { font-size: 12px; color: var(--ink-mute); }
+.eval-score { font-size: 12px; font-weight: 700; color: var(--brand-primary); background: var(--brand-primary-soft); padding: 1px 8px; border-radius: 999px; }
+.eval-goal { font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
+.eval-form, .counsel-form {
+  margin-top: 8px; padding: 12px; background: var(--surface-2);
+  border: 1px solid var(--line-soft); border-radius: var(--r-md);
+}
+
 /* Big stat / chart */
 .chart-card { padding: 20px; }
 .bar-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }

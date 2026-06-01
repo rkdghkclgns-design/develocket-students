@@ -667,9 +667,10 @@ function StudentDetail({ row, threshold, onClose, onUpdate }) {
     onUpdate();
   }
 
-  // 문서 탭 라벨/뱃지용 (렌더당 1회) — StudentDetail은 onChange로 재렌더되어 최신 반영
+  // 탭 라벨/뱃지용 (렌더당 1회) — StudentDetail은 onChange로 재렌더되어 최신 반영
   const studentDocs = window.STORE.listDocuments(s.id);
   const docReviewCount = studentDocs.filter(d => d.status === 'review_requested').length;
+  const careerPendingCount = window.STORE.listCareerRequests({ studentId: s.id, status: 'pending' }).length;
 
   return (
     <>
@@ -693,6 +694,7 @@ function StudentDetail({ row, threshold, onClose, onUpdate }) {
           { k: 'jobs', label: `공고 (${jobs.length})`, alert: row.overduePlannedCount > 0 ? row.overduePlannedCount : null },
           { k: 'docs', label: `문서 (${studentDocs.length})`, alert: (docReviewCount || null) },
           { k: 'comments', label: `코멘트 (${comments.length})` },
+          { k: 'eval', label: '🔒 평가·면담', alert: (careerPendingCount || null) },
           { k: 'info', label: '연락처' }
         ].map(tt => (
           <button key={tt.k} className={`tab ${tab === tt.k ? 'active' : ''}`} style={{ padding: '12px 14px', fontSize: 13, whiteSpace: 'nowrap' }}
@@ -836,6 +838,19 @@ function StudentDetail({ row, threshold, onClose, onUpdate }) {
 
         {tab === 'docs' && (
           <DocumentsPanel student={s} viewerRole="admin" />
+        )}
+
+        {tab === 'eval' && (
+          <div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
+              🔒 이 탭의 평가·면담 내용은 학생에게 노출되지 않습니다. 희망직군 변경 요청도 여기서 승인합니다.
+            </div>
+            <div style={{ marginBottom: 18 }}>
+              <CareerApprovalRow student={s} onUpdate={onUpdate} />
+            </div>
+            <EvaluationsPanel student={s} />
+            <CounselingPanel student={s} />
+          </div>
         )}
 
         {tab === 'info' && (
