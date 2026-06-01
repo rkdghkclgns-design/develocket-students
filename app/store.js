@@ -31,6 +31,9 @@
     const A = new Date(a + 'T00:00:00'); const B = new Date(b + 'T00:00:00');
     return Math.round((B - A) / 86400000);
   };
+  // 문서 종류 라벨 (알림 메시지 등에서 사용)
+  const DOC_KIND_LABELS = { resume: '이력서', cover_letter: '자소서', portfolio: '포폴' };
+  const docKindLabel = (k) => DOC_KIND_LABELS[k] || k || '문서';
 
   /* ---------------- LocalStorage Adapter ---------------- */
   class LocalAdapter {
@@ -39,19 +42,33 @@
       const raw = localStorage.getItem(KEY);
       let initial;
       try { initial = raw ? JSON.parse(raw) : null; } catch (e) { initial = null; }
-      // Schema version check — re-seed if outdated
-      const CURRENT_VERSION = 5;
+      // Schema version check — 가능한 한 비파괴 마이그레이션, 불가 시에만 re-seed
+      const CURRENT_VERSION = 6;
       if (initial && (!initial.admin_meta || initial.admin_meta.version !== CURRENT_VERSION)) {
-        // v4 -> v5: 기존 데이터 보존하면서 cohort_meta만 보강
-        if (initial && initial.admin_meta && initial.admin_meta.version === 4) {
-          initial.cohort_meta = initial.cohort_meta || {};
-          Object.keys(ROSTER).forEach(id => {
-            if (!initial.cohort_meta[id]) {
-              initial.cohort_meta[id] = { archived_at: null, custom: false };
-            }
-          });
+        const v = (initial.admin_meta && initial.admin_meta.version) || 0;
+        if (v >= 4) {
+          // forward-only 마이그레이션: v4 이상은 기존 데이터 100% 보존하며 누적 적용
+          // v4 -> v5: cohort_meta 보강
+          if (v === 4) {
+            initial.cohort_meta = initial.cohort_meta || {};
+            Object.keys(ROSTER).forEach(id => {
+              if (!initial.cohort_meta[id]) {
+                initial.cohort_meta[id] = { archived_at: null, custom: false };
+              }
+            });
+          }
+          // v4/v5 -> v6: 건의사항 신규 컬렉션 보강
+          if (v < 6) {
+            initial.documents        = initial.documents        || [];
+            initial.career_requests  = initial.career_requests  || [];
+            initial.evaluations      = initial.evaluations      || [];
+            initial.counseling       = initial.counseling       || [];
+            initial.comment_reads    = initial.comment_reads    || [];
+            initial.notif_dismissals = initial.notif_dismissals || [];
+          }
           initial.admin_meta.version = CURRENT_VERSION;
         } else {
+          // v<4 또는 admin_meta 없음: 안전 복구 불가 → 재시드 (기존 동작 유지)
           initial = null;
         }
       }
@@ -59,7 +76,23 @@
       this._syncRoster();
       this._save();
     }
-    _save() { localStorage.setItem(KEY, JSON.stringify(this.db)); this._notify(); }
+    _writeLocal() {
+      try {
+        localStorage.setItem(KEY, JSON.stringify(this.db));
+        return true;
+      } catch (e) {
+        // QuotaExceededError: 대용량 base64 첨부(PDF) 등으로 5MB 한도 초과
+        if (e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014)) {
+          console.error('[store] localStorage 용량 초과 — 변경이 저장되지 않았습니다. 큰 첨부는 링크로 대체하세요.', e);
+          if (typeof global.alert === 'function') {
+            global.alert('저장 공간이 가득 찼습니다. 업로드한 파일이 너무 큽니다.\n큰 파일(PDF)은 구글드라이브 링크로 첨부해 주세요.');
+          }
+          return false;
+        }
+        throw e;
+      }
+    }
+    _save() { this._writeLocal(); this._notify(); }
     _notify() { this._listeners.forEach(fn => { try { fn(); } catch (e) {} }); }
     onChange(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
     _seed() {
@@ -263,8 +296,14 @@
         jobs,
         comments,
         attendance,
+        documents: [],
+        career_requests: [],
+        evaluations: [],
+        counseling: [],
+        comment_reads: [],
+        notif_dismissals: [],
         cohort_meta,
-        admin_meta: { version: 5 }
+        admin_meta: { version: 6 }
       };
     }
 
@@ -530,12 +569,13 @@
 
     /* ===== comments (visibility: 'admin-only' | 'student-only' | 'both') ===== */
     listComments(studentId, opts = {}) {
-      const all = this.db.comments
+      let all = this.db.comments
         .filter(c => c.student_id === studentId)
         .sort((a, b) => a.created_at.localeCompare(b.created_at));
       if (opts.viewerRole === 'student') {
-        return all.filter(c => c.visibility === 'both' || c.visibility === 'student-only');
+        all = all.filter(c => c.visibility === 'both' || c.visibility === 'student-only');
       }
+      if (opts.order === 'desc') all = all.slice().reverse();   // 최신순
       return all;
     }
     addComment(studentId, author, text, opts = {}) {
@@ -561,6 +601,255 @@
     deleteComment(id) {
       this.db.comments = this.db.comments.filter(c => c.id !== id);
       this._save();
+    }
+
+    /* ===== [D] comment read receipts (양방향 읽음) ===== */
+    getCommentReadState(studentId) {
+      const r = (this.db.comment_reads || []).find(x => x.student_id === studentId);
+      // 내부 참조 노출 방지 — 복사본 반환
+      return r ? { ...r } : { student_id: studentId, admin_read_at: null, student_read_at: null };
+    }
+    markCommentsRead(studentId, role) {
+      if (!this.db.comment_reads) this.db.comment_reads = [];
+      let r = this.db.comment_reads.find(x => x.student_id === studentId);
+      if (!r) { r = { student_id: studentId, admin_read_at: null, student_read_at: null }; this.db.comment_reads.push(r); }
+      const now = new Date().toISOString();
+      if (role === 'admin') r.admin_read_at = now; else r.student_read_at = now;
+      this._save();
+      return r;
+    }
+    getUnreadCommentCount(studentId, role) {
+      const state = this.getCommentReadState(studentId);
+      const otherRole = role === 'admin' ? 'student' : 'admin';
+      const cursor = role === 'admin' ? state.admin_read_at : state.student_read_at;
+      return (this.db.comments || []).filter(c =>
+        c.student_id === studentId &&
+        c.author_role === otherRole &&
+        (!cursor || c.created_at > cursor) &&
+        (role === 'admin' || c.visibility === 'both' || c.visibility === 'student-only')
+      ).length;
+    }
+
+    /* ===== [A] documents (이력서/자소서/포폴) ===== */
+    listDocuments(studentId) {
+      return (this.db.documents || [])
+        .filter(d => d.student_id === studentId)
+        .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+    }
+    upsertDocument(doc) {
+      if (!this.db.documents) this.db.documents = [];
+      const now = new Date().toISOString();
+      const existing = doc.id ? this.db.documents.find(d => d.id === doc.id) : null;
+      if (existing) {
+        Object.assign(existing, doc, { updated_at: now });
+        this._save();
+        return existing;
+      }
+      const created = {
+        id: uid('doc'),
+        student_id: doc.student_id,
+        kind: doc.kind || 'resume',
+        title: doc.title || '',
+        link: doc.link || '',
+        file_url: doc.file_url || '',
+        file_name: doc.file_name || '',
+        status: doc.status || 'none',
+        created_at: now,
+        updated_at: now
+      };
+      this.db.documents.push(created);
+      this._save();
+      return created;
+    }
+    deleteDocument(id) {
+      this.db.documents = (this.db.documents || []).filter(d => d.id !== id);
+      this._save();
+    }
+    setDocumentStatus(id, status) {
+      const d = (this.db.documents || []).find(x => x.id === id);
+      if (d) { d.status = status; d.updated_at = new Date().toISOString(); this._save(); }
+      return d;
+    }
+    // Local/Gist: 파일을 base64 dataURL 로 인라인 저장 (≤1.5MB, 초과 시 throw → 링크 유도)
+    async uploadDocumentFile(studentId, file) {
+      const MAX = 1.5 * 1024 * 1024;
+      if (file.size > MAX) {
+        throw new Error(`파일이 너무 큽니다 (${(file.size / 1024 / 1024).toFixed(1)}MB). 1.5MB 이하만 업로드 가능합니다. 큰 파일은 구글드라이브 링크를 사용하세요.`);
+      }
+      const dataUrl = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(new Error('파일을 읽을 수 없습니다'));
+        fr.readAsDataURL(file);
+      });
+      return { file_url: dataUrl, file_name: file.name };
+    }
+
+    /* ===== [A] admin notifications (derive — 저장하지 않음) ===== */
+    getAdminNotifications() {
+      const dismissed = new Set((this.db.notif_dismissals || []).map(d => d.id));
+      const nameOf = (id) => { const s = this.getStudent(id); return s ? s.name : '(알 수 없음)'; };
+      const readMap = {};
+      (this.db.comment_reads || []).forEach(r => { readMap[r.student_id] = r; });
+      const out = [];
+      // 1) 미읽음 학생 코멘트
+      (this.db.comments || []).forEach(c => {
+        if (c.author_role !== 'student') return;
+        const cur = readMap[c.student_id];
+        if (cur && cur.admin_read_at && c.created_at <= cur.admin_read_at) return;
+        const id = `comment:${c.id}`;
+        if (dismissed.has(id)) return;
+        out.push({ id, type: 'comment', student_id: c.student_id, student_name: nameOf(c.student_id), message: c.text, created_at: c.created_at });
+      });
+      // 2) 검토요청 문서
+      (this.db.documents || []).forEach(d => {
+        if (d.status !== 'review_requested') return;
+        const id = `doc_review:${d.id}:${d.updated_at || ''}`;
+        if (dismissed.has(id)) return;
+        out.push({ id, type: 'doc_review', student_id: d.student_id, student_name: nameOf(d.student_id), message: `${docKindLabel(d.kind)} 검토 요청: ${d.title || ''}`, created_at: d.updated_at || d.created_at });
+      });
+      // 3) pending 희망직군 변경 요청
+      (this.db.career_requests || []).forEach(r => {
+        if (r.status !== 'pending') return;
+        const id = `career_change:${r.id}`;
+        if (dismissed.has(id)) return;
+        out.push({ id, type: 'career_change', student_id: r.student_id, student_name: nameOf(r.student_id), message: `희망직군 변경 승인 요청: ${(r.choices || []).filter(Boolean).join(' → ')}`, created_at: r.requested_at });
+      });
+      out.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+      return out;
+    }
+    dismissNotification(synthId) {
+      if (!this.db.notif_dismissals) this.db.notif_dismissals = [];
+      if (!this.db.notif_dismissals.some(d => d.id === synthId)) {
+        this.db.notif_dismissals.push({ id: synthId, dismissed_at: new Date().toISOString() });
+        this._save();
+      }
+    }
+
+    /* ===== [B] career preference (희망직군 지망 + 승인) ===== */
+    getCareerPref(studentId) {
+      const s = this.getStudent(studentId);
+      // 내부 참조 노출 방지 — 복사본 반환
+      return (s && s.job_pref) ? { ...s.job_pref } : null;
+    }
+    setCareerPref(studentId, choices) {
+      const s = this.getStudent(studentId);
+      if (!s) return { error: 'no-student' };
+      const clean = (choices || []).map(c => (c || '').trim()).filter(Boolean);
+      const now = new Date().toISOString();
+      // 최초 선택(승인된 값 없음) → 즉시 적용
+      if (!s.job_pref || !Array.isArray(s.job_pref.choices) || s.job_pref.choices.length === 0) {
+        s.job_pref = { choices: clean, approved_at: now };
+        this._save();
+        return { applied: true };
+      }
+      // 변경 → pending 요청 (기존 pending 대체)
+      if (!this.db.career_requests) this.db.career_requests = [];
+      this.db.career_requests = this.db.career_requests.filter(r => !(r.student_id === studentId && r.status === 'pending'));
+      this.db.career_requests.push({ id: uid('ccr'), student_id: studentId, choices: clean, status: 'pending', requested_at: now, decided_at: null, decided_by: null });
+      this._save();
+      return { pending: true };
+    }
+    listCareerRequests(opts = {}) {
+      let list = (this.db.career_requests || []).slice();
+      if (opts.status) list = list.filter(r => r.status === opts.status);
+      if (opts.studentId) list = list.filter(r => r.student_id === opts.studentId);
+      return list.sort((a, b) => (b.requested_at || '').localeCompare(a.requested_at || ''));
+    }
+    decideCareerRequest(reqId, approve, decidedBy = '관리자') {
+      const r = (this.db.career_requests || []).find(x => x.id === reqId);
+      if (!r) return;
+      r.status = approve ? 'approved' : 'rejected';
+      r.decided_at = new Date().toISOString();
+      r.decided_by = decidedBy;
+      if (approve) {
+        const s = this.getStudent(r.student_id);
+        if (s) s.job_pref = { choices: r.choices, approved_at: r.decided_at };
+      }
+      this._save();
+      return r;
+    }
+
+    /* ===== [B] evaluations (훈련생 평가 — 관리자 전용, 학생 비공개) ===== */
+    listEvaluations(studentId) {
+      return (this.db.evaluations || [])
+        .filter(e => e.student_id === studentId)
+        .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    }
+    upsertEvaluation(ev) {
+      if (!this.db.evaluations) this.db.evaluations = [];
+      const now = new Date().toISOString();
+      const existing = ev.id ? this.db.evaluations.find(e => e.id === ev.id) : null;
+      if (existing) { Object.assign(existing, ev, { updated_at: now }); this._save(); return existing; }
+      const created = { id: uid('eval'), student_id: ev.student_id, evaluator: ev.evaluator || '', goal: ev.goal || '', content: ev.content || '', score: ev.score ?? null, created_at: now, updated_at: now };
+      this.db.evaluations.push(created);
+      this._save();
+      return created;
+    }
+    deleteEvaluation(id) {
+      this.db.evaluations = (this.db.evaluations || []).filter(e => e.id !== id);
+      this._save();
+    }
+
+    /* ===== [B] counseling (취업면담 이력 — 관리자 전용, 학생 비공개) ===== */
+    listCounseling(studentId) {
+      return (this.db.counseling || [])
+        .filter(c => c.student_id === studentId)
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    }
+    addCounseling(c) {
+      if (!this.db.counseling) this.db.counseling = [];
+      const created = { id: uid('cns'), student_id: c.student_id, date: c.date || todayStr(), counselor: c.counselor || '', content: c.content || '', created_at: new Date().toISOString() };
+      this.db.counseling.push(created);
+      this._save();
+      return created;
+    }
+    deleteCounseling(id) {
+      this.db.counseling = (this.db.counseling || []).filter(c => c.id !== id);
+      this._save();
+    }
+
+    /* ===== [C] interview rounds + funnel ===== */
+    setInterviewRound(jobId, round) {
+      const j = this.db.jobs.find(x => x.id === jobId);
+      if (!j) return;
+      if (!Array.isArray(j.interview_rounds)) j.interview_rounds = [];
+      const entry = { round: round.round, date: round.date || '', status: round.status || '대기', memo: round.memo || '' };
+      const i = j.interview_rounds.findIndex(r => r.round === round.round);
+      if (i >= 0) j.interview_rounds[i] = entry; else j.interview_rounds.push(entry);
+      j.updated_at = todayStr();
+      this._save();
+      return j;
+    }
+    removeInterviewRound(jobId, roundKey) {
+      const j = this.db.jobs.find(x => x.id === jobId);
+      if (!j || !Array.isArray(j.interview_rounds)) return;
+      j.interview_rounds = j.interview_rounds.filter(r => r.round !== roundKey);
+      j.updated_at = todayStr();
+      this._save();
+      return j;
+    }
+    listInterviewJobs(cohort) {
+      const ids = new Set(this.listStudents(cohort).map(s => s.id));
+      return this.db.jobs.filter(j =>
+        ids.has(j.student_id) &&
+        ((Array.isArray(j.interview_rounds) && j.interview_rounds.length > 0) || j.status === '면접' || j.pipeline_stage === '면접')
+      );
+    }
+    getJobFunnel(cohort) {
+      const ids = new Set(this.listStudents(cohort).map(s => s.id));
+      const jobs = this.db.jobs.filter(j => ids.has(j.student_id));
+      const hasRounds = (j) => Array.isArray(j.interview_rounds) && j.interview_rounds.length > 0;
+      const total = jobs.length;
+      const applied = jobs.filter(j => j.applied_at || ['지원완료', '면접', '합격', '불합격'].includes(j.status) || hasRounds(j)).length;
+      const interviewing = jobs.filter(j => j.status === '면접' || hasRounds(j)).length;
+      const passed = jobs.filter(j => j.status === '합격' || (hasRounds(j) && j.interview_rounds.some(r => r.status === '합격'))).length;
+      return {
+        total, applied, interviewing, passed,
+        applyRate: total ? applied / total : 0,
+        interviewRate: applied ? interviewing / applied : 0,
+        passRate: interviewing ? passed / interviewing : 0
+      };
     }
 
     /* ===== admin computed views ===== */
@@ -761,7 +1050,14 @@
     daily_reports: 'dl_daily_reports',
     jobs: 'dl_jobs',
     comments: 'dl_comments',
-    attendance: 'dl_attendance'
+    attendance: 'dl_attendance',
+    // 2026-06 건의사항 신규 테이블
+    documents: 'dl_documents',
+    career_requests: 'dl_career_change_requests',
+    evaluations: 'dl_evaluations',
+    counseling: 'dl_counseling',
+    comment_reads: 'dl_comment_reads',
+    notif_dismissals: 'dl_notification_dismissals'
   };
   // DB row → UI student
   function fromDbStudent(r) {
@@ -786,24 +1082,42 @@
       this._listeners = new Set();
       this.db = {
         students: [], daily_reports: [], jobs: [], comments: [],
-        attendance: [], cohort_meta: {}, admin_meta: {}
+        attendance: [],
+        // 2026-06 건의사항 신규 컬렉션
+        documents: [], career_requests: [], evaluations: [],
+        counseling: [], comment_reads: [], notif_dismissals: [],
+        cohort_meta: {}, admin_meta: {}
       };
       this.ready = this._bootstrap();
     }
     async _bootstrap() {
-      const [cohorts, students, reports, jobs, comments, attendance] = await Promise.all([
+      const [cohorts, students, reports, jobs, comments, attendance,
+             documents, careerReqs, evaluations, counseling, commentReads, notifDismissals] = await Promise.all([
         this.client.from(SB_TABLES.cohorts).select('*'),
         this.client.from(SB_TABLES.students).select('*'),
         this.client.from(SB_TABLES.daily_reports).select('*'),
         this.client.from(SB_TABLES.jobs).select('*'),
         this.client.from(SB_TABLES.comments).select('*'),
-        this.client.from(SB_TABLES.attendance).select('*')
+        this.client.from(SB_TABLES.attendance).select('*'),
+        // 2026-06 건의사항 신규 테이블 (마이그레이션 전이면 error → 빈 배열로 graceful)
+        this.client.from(SB_TABLES.documents).select('*'),
+        this.client.from(SB_TABLES.career_requests).select('*'),
+        this.client.from(SB_TABLES.evaluations).select('*'),
+        this.client.from(SB_TABLES.counseling).select('*'),
+        this.client.from(SB_TABLES.comment_reads).select('*'),
+        this.client.from(SB_TABLES.notif_dismissals).select('*')
       ]);
       this.db.students      = (students.data || []).map(fromDbStudent);
       this.db.daily_reports = reports.data  || [];
       this.db.jobs          = jobs.data     || [];
       this.db.comments      = comments.data || [];
       this.db.attendance    = attendance.data || [];
+      this.db.documents        = documents.data       || [];
+      this.db.career_requests  = careerReqs.data      || [];
+      this.db.evaluations      = evaluations.data     || [];
+      this.db.counseling       = counseling.data      || [];
+      this.db.comment_reads    = commentReads.data    || [];
+      this.db.notif_dismissals = notifDismissals.data || [];
 
       // cohort_meta: dl_cohorts → STUDENT_ROSTER 갱신 (기존 시드에 없는 cohort 등록)
       (cohorts.data || []).forEach(c => {
@@ -831,11 +1145,15 @@
         this.client.channel(`rt_${table}`)
           .on('postgres_changes', { event: '*', schema: 'public', table }, payload => {
             if (key === 'cohorts') { this._applyCohortChange(payload); this._notify(); return; }
+            // comment_reads 는 student_id 가 PK(id 컬럼 없음) → 별도 처리
+            if (key === 'comment_reads') { this._applyCommentReadChange(payload); this._notify(); return; }
             const rows = this.db[key];
             if (!rows) return;
             const newRow = key === 'students' ? fromDbStudent(payload.new) : payload.new;
-            if (payload.eventType === 'INSERT') rows.push(newRow);
-            else if (payload.eventType === 'UPDATE') {
+            if (payload.eventType === 'INSERT') {
+              // 낙관적 push + realtime echo 로 인한 중복 방지
+              if (!rows.some(r => r.id === newRow.id)) rows.push(newRow);
+            } else if (payload.eventType === 'UPDATE') {
               const i = rows.findIndex(r => r.id === newRow.id);
               if (i >= 0) rows[i] = newRow;
             } else if (payload.eventType === 'DELETE') {
@@ -845,6 +1163,16 @@
           }).subscribe();
       });
       this._notify();
+    }
+    _applyCommentReadChange(payload) {
+      const rows = this.db.comment_reads || (this.db.comment_reads = []);
+      if (payload.eventType === 'DELETE') {
+        this.db.comment_reads = rows.filter(r => r.student_id !== payload.old.student_id);
+        return;
+      }
+      const row = payload.new;
+      const i = rows.findIndex(r => r.student_id === row.student_id);
+      if (i >= 0) rows[i] = row; else rows.push(row);
     }
     _applyCohortChange(payload) {
       if (payload.eventType === 'DELETE') {
@@ -1026,7 +1354,11 @@
         planned_apply_date: job.planned_apply_date || null,
         due_date: job.due_date || null,
         url: job.url || '',
-        memo: job.memo || ''
+        memo: job.memo || '',
+        // 2026-06 면접 이력 확장
+        applied_at: job.applied_at || null,
+        interview_rounds: job.interview_rounds || [],
+        pipeline_stage: job.pipeline_stage || null
       };
       const { data, error } = await this.client.from(SB_TABLES.jobs)
         .upsert(row).select().single();
@@ -1043,12 +1375,13 @@
 
     /* ===== comments ===== */
     listComments(studentId, opts = {}) {
-      const all = this.db.comments
+      let all = this.db.comments
         .filter(c => c.student_id === studentId)
         .sort((a, b) => a.created_at.localeCompare(b.created_at));
       if (opts.viewerRole === 'student') {
-        return all.filter(c => c.visibility === 'both' || c.visibility === 'student-only');
+        all = all.filter(c => c.visibility === 'both' || c.visibility === 'student-only');
       }
+      if (opts.order === 'desc') all = all.slice().reverse();   // 최신순
       return all;
     }
     async addComment(studentId, author, text, opts = {}) {
@@ -1074,6 +1407,182 @@
       this.db.comments = this.db.comments.filter(c => c.id !== id);
       this._notify();
     }
+
+    /* ===== [D] comment read receipts ===== */
+    async markCommentsRead(studentId, role) {
+      const existing = (this.db.comment_reads || []).find(x => x.student_id === studentId);
+      const now = new Date().toISOString();
+      const row = {
+        student_id: studentId,
+        admin_read_at: existing ? existing.admin_read_at : null,
+        student_read_at: existing ? existing.student_read_at : null
+      };
+      if (role === 'admin') row.admin_read_at = now; else row.student_read_at = now;
+      const { data, error } = await this.client.from(SB_TABLES.comment_reads)
+        .upsert(row, { onConflict: 'student_id' }).select().single();
+      if (error) { console.warn('markCommentsRead error', error); return; }
+      const i = (this.db.comment_reads || []).findIndex(x => x.student_id === studentId);
+      if (i >= 0) this.db.comment_reads[i] = data; else this.db.comment_reads.push(data);
+      this._notify();
+      return data;
+    }
+
+    /* ===== [A] documents ===== */
+    async upsertDocument(doc) {
+      const row = {
+        id: doc.id || uid('doc'),
+        student_id: doc.student_id,
+        kind: doc.kind || 'resume',
+        title: doc.title || '',
+        link: doc.link || '',
+        file_url: doc.file_url || '',
+        file_name: doc.file_name || '',
+        status: doc.status || 'none'
+      };
+      const { data, error } = await this.client.from(SB_TABLES.documents).upsert(row).select().single();
+      if (error) { console.warn('upsertDocument error', error); return; }
+      const i = this.db.documents.findIndex(d => d.id === data.id);
+      if (i >= 0) this.db.documents[i] = data; else this.db.documents.push(data);
+      this._notify();
+      return data;
+    }
+    async deleteDocument(id) {
+      await this.client.from(SB_TABLES.documents).delete().eq('id', id);
+      this.db.documents = this.db.documents.filter(d => d.id !== id);
+      this._notify();
+    }
+    async setDocumentStatus(id, status) {
+      const { data, error } = await this.client.from(SB_TABLES.documents)
+        .update({ status }).eq('id', id).select().single();
+      if (error) { console.warn('setDocumentStatus error', error); return; }
+      const i = this.db.documents.findIndex(d => d.id === id);
+      if (i >= 0) this.db.documents[i] = data;
+      this._notify();
+      return data;
+    }
+    // Supabase: Storage 버킷 'dl-documents' 에 업로드 → public URL 반환
+    async uploadDocumentFile(studentId, file) {
+      const safeName = (file.name || 'file').replace(/[^\w.\-가-힣]/g, '_');
+      const path = `${studentId}/${Date.now()}_${safeName}`;
+      const { error } = await this.client.storage.from('dl-documents')
+        .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || 'application/octet-stream' });
+      if (error) throw new Error('업로드 실패: ' + (error.message || error));
+      const { data } = this.client.storage.from('dl-documents').getPublicUrl(path);
+      return { file_url: data.publicUrl, file_name: file.name };
+    }
+    async dismissNotification(synthId) {
+      const row = { id: synthId, dismissed_at: new Date().toISOString() };
+      const { error } = await this.client.from(SB_TABLES.notif_dismissals).upsert(row);
+      if (error) { console.warn('dismissNotification error', error); return; }
+      if (!this.db.notif_dismissals.some(d => d.id === synthId)) this.db.notif_dismissals.push(row);
+      this._notify();
+    }
+
+    /* ===== [B] career preference ===== */
+    async setCareerPref(studentId, choices) {
+      const s = this.getStudent(studentId);
+      if (!s) return { error: 'no-student' };
+      const clean = (choices || []).map(c => (c || '').trim()).filter(Boolean);
+      const now = new Date().toISOString();
+      if (!s.job_pref || !Array.isArray(s.job_pref.choices) || s.job_pref.choices.length === 0) {
+        const job_pref = { choices: clean, approved_at: now };
+        const { data, error } = await this.client.from(SB_TABLES.students)
+          .update({ job_pref }).eq('id', studentId).select().single();
+        if (error) { console.warn('setCareerPref error', error); return { error }; }
+        const i = this.db.students.findIndex(x => x.id === studentId);
+        if (i >= 0) this.db.students[i] = fromDbStudent(data);
+        this._notify();
+        return { applied: true };
+      }
+      // pending: 기존 pending 삭제 후 insert
+      await this.client.from(SB_TABLES.career_requests).delete().eq('student_id', studentId).eq('status', 'pending');
+      this.db.career_requests = this.db.career_requests.filter(r => !(r.student_id === studentId && r.status === 'pending'));
+      const row = { id: uid('ccr'), student_id: studentId, choices: clean, status: 'pending', requested_at: now };
+      const { data, error } = await this.client.from(SB_TABLES.career_requests).insert(row).select().single();
+      if (error) { console.warn('setCareerPref pending error', error); return { error }; }
+      this.db.career_requests.push(data);
+      this._notify();
+      return { pending: true };
+    }
+    listCareerRequests(opts) { return LocalAdapter.prototype.listCareerRequests.call(this, opts); }
+    getCareerPref(studentId) { return LocalAdapter.prototype.getCareerPref.call(this, studentId); }
+    async decideCareerRequest(reqId, approve, decidedBy = '관리자') {
+      const r = this.db.career_requests.find(x => x.id === reqId);
+      if (!r) return;
+      const patch = { status: approve ? 'approved' : 'rejected', decided_at: new Date().toISOString(), decided_by: decidedBy };
+      const { data, error } = await this.client.from(SB_TABLES.career_requests).update(patch).eq('id', reqId).select().single();
+      if (error) { console.warn('decideCareerRequest error', error); return; }
+      const i = this.db.career_requests.findIndex(x => x.id === reqId);
+      if (i >= 0) this.db.career_requests[i] = data;
+      if (approve) {
+        const job_pref = { choices: r.choices, approved_at: data.decided_at };
+        const upd = await this.client.from(SB_TABLES.students).update({ job_pref }).eq('id', r.student_id).select().single();
+        if (!upd.error && upd.data) {
+          const si = this.db.students.findIndex(x => x.id === r.student_id);
+          if (si >= 0) this.db.students[si] = fromDbStudent(upd.data);
+        }
+      }
+      this._notify();
+      return data;
+    }
+
+    /* ===== [B] evaluations ===== */
+    listEvaluations(studentId) { return LocalAdapter.prototype.listEvaluations.call(this, studentId); }
+    async upsertEvaluation(ev) {
+      const row = { id: ev.id || uid('eval'), student_id: ev.student_id, evaluator: ev.evaluator || '', goal: ev.goal || '', content: ev.content || '', score: ev.score ?? null };
+      const { data, error } = await this.client.from(SB_TABLES.evaluations).upsert(row).select().single();
+      if (error) { console.warn('upsertEvaluation error', error); return; }
+      const i = this.db.evaluations.findIndex(e => e.id === data.id);
+      if (i >= 0) this.db.evaluations[i] = data; else this.db.evaluations.push(data);
+      this._notify();
+      return data;
+    }
+    async deleteEvaluation(id) {
+      await this.client.from(SB_TABLES.evaluations).delete().eq('id', id);
+      this.db.evaluations = this.db.evaluations.filter(e => e.id !== id);
+      this._notify();
+    }
+
+    /* ===== [B] counseling ===== */
+    listCounseling(studentId) { return LocalAdapter.prototype.listCounseling.call(this, studentId); }
+    async addCounseling(c) {
+      const row = { id: uid('cns'), student_id: c.student_id, date: c.date || todayStr(), counselor: c.counselor || '', content: c.content || '' };
+      const { data, error } = await this.client.from(SB_TABLES.counseling).insert(row).select().single();
+      if (error) { console.warn('addCounseling error', error); return; }
+      this.db.counseling.push(data);
+      this._notify();
+      return data;
+    }
+    async deleteCounseling(id) {
+      await this.client.from(SB_TABLES.counseling).delete().eq('id', id);
+      this.db.counseling = this.db.counseling.filter(c => c.id !== id);
+      this._notify();
+    }
+
+    /* ===== [C] interview rounds (jsonb on jobs) ===== */
+    async setInterviewRound(jobId, round) {
+      const j = this.db.jobs.find(x => x.id === jobId);
+      if (!j) return;
+      const rounds = Array.isArray(j.interview_rounds) ? j.interview_rounds.slice() : [];
+      const entry = { round: round.round, date: round.date || '', status: round.status || '대기', memo: round.memo || '' };
+      const i = rounds.findIndex(r => r.round === round.round);
+      if (i >= 0) rounds[i] = entry; else rounds.push(entry);
+      await this.upsertJob({ ...j, interview_rounds: rounds });
+    }
+    async removeInterviewRound(jobId, roundKey) {
+      const j = this.db.jobs.find(x => x.id === jobId);
+      if (!j) return;
+      const rounds = (Array.isArray(j.interview_rounds) ? j.interview_rounds : []).filter(r => r.round !== roundKey);
+      await this.upsertJob({ ...j, interview_rounds: rounds });
+    }
+
+    /* ===== derived reads (LocalAdapter 로직 재사용) ===== */
+    listDocuments(studentId) { return LocalAdapter.prototype.listDocuments.call(this, studentId); }
+    getAdminNotifications() { return LocalAdapter.prototype.getAdminNotifications.call(this); }
+    getCommentReadState(studentId) { return LocalAdapter.prototype.getCommentReadState.call(this, studentId); }
+    getUnreadCommentCount(studentId, role) { return LocalAdapter.prototype.getUnreadCommentCount.call(this, studentId, role); }
+    listInterviewJobs(cohort) { return LocalAdapter.prototype.listInterviewJobs.call(this, cohort); }
+    getJobFunnel(cohort) { return LocalAdapter.prototype.getJobFunnel.call(this, cohort); }
 
     /* ===== attendance ===== */
     listAttendance(opts = {}) {
@@ -1280,7 +1789,7 @@
       });
     }
     _save() {
-      localStorage.setItem(KEY, JSON.stringify(this.db));
+      this._writeLocal();
       this._notify();
       if (!this._suppressPush) this._schedulePush();
     }
@@ -1421,7 +1930,7 @@
         description: '디벨로켓 수강생 관리 - 데이터 동기화',
         public: !!isPublic,
         files: {
-          'develocket-db.json': { content: '{"admin_meta":{"version":5,"updated_at":0}}' }
+          'develocket-db.json': { content: '{"admin_meta":{"version":6,"updated_at":0}}' }
         }
       })
     });

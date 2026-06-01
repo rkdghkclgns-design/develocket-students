@@ -1,5 +1,18 @@
 -- ============================================================================
--- 디벨로켓 수강생 관리 — Supabase 스키마
+-- 디벨로켓 수강생 관리 — Supabase 스키마 (참조용)
+-- ----------------------------------------------------------------------------
+-- ⚠️ 주의: 이 파일의 테이블명은 접두사가 없지만, 실제 앱(store.js / SupabaseAdapter)은
+--    `dl_` 접두사 테이블(dl_students, dl_jobs, dl_comments, ...)을 사용합니다.
+--    따라서 이 파일은 데이터 모델 이해를 돕는 '참조 문서'이며, 운영 DB의 정식 스키마는
+--    `dl_` 접두사 마이그레이션들입니다.
+--
+-- 📌 2026-06 건의사항 반영(문서관리/희망직군 승인/평가/면담/면접이력/코멘트 읽음)은
+--    별도 add-only 마이그레이션으로 분리되어 있습니다:
+--      → app/migrations/2026-06-dl-features.sql  (SQL Editor 에 붙여넣어 실행)
+--    신규 테이블: dl_documents, dl_career_change_requests, dl_evaluations,
+--                 dl_counseling, dl_comment_reads, dl_notification_dismissals
+--    신규 컬럼:   dl_students.job_pref, dl_jobs.applied_at/interview_rounds/pipeline_stage
+--    + Storage 버킷 'dl-documents'(PDF 업로드)
 -- ----------------------------------------------------------------------------
 -- 사용법:
 --   1. Supabase 프로젝트 생성 → SQL Editor 에서 이 파일 전체 실행
