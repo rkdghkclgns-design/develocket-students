@@ -8,6 +8,81 @@
    - 수강생 클릭 → 상세 드로어 (코멘트, 최근 보고 보기)
    ========================================================================== */
 
+/* ==========================================================================
+   AdminNotifications — 학생 코멘트 / 문서 검토요청 / 희망직군 변경요청 알림
+   - getAdminNotifications() (derive) 기반, 현재 기수로 한정
+   - 클릭 → 해당 학생 상세, [확인] → dismiss(목록에서 사라짐)
+   ========================================================================== */
+const NOTIF_TYPE_META = {
+  comment:       { icon: '💬', label: '코멘트' },
+  doc_review:    { icon: '📁', label: '검토요청' },
+  career_change: { icon: '🎯', label: '직군변경' }
+};
+function AdminNotifications({ cohortId, onOpenStudent }) {
+  const [open, setOpen] = useState(false);
+  const [notifs, setNotifs] = useState([]);
+  function reload() {
+    const ids = new Set(window.STORE.listStudents(cohortId).map(s => s.id));
+    setNotifs(window.STORE.getAdminNotifications().filter(n => ids.has(n.student_id)));
+  }
+  useEffect(() => { reload(); return window.STORE.onChange(reload); }, [cohortId]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  function dismiss(e, id) {
+    e.stopPropagation();
+    Promise.resolve(window.STORE.dismissNotification(id)).then(reload).catch(() => {});
+  }
+  function openStudent(n) { setOpen(false); onOpenStudent(n.student_id); }
+
+  return (
+    <div className="notif-wrap">
+      <button className={`btn btn-ghost btn-icon notif-bell ${notifs.length ? 'has-unread' : ''}`}
+        onClick={() => setOpen(o => !o)} title="알림">
+        🔔
+        {notifs.length > 0 && <span className="notif-count">{notifs.length > 99 ? '99+' : notifs.length}</span>}
+      </button>
+      {open && <div className="notif-backdrop" onClick={() => setOpen(false)} />}
+      {open && (
+        <div className="notif-panel">
+          <div className="notif-panel-head">
+            🔔 알림 {notifs.length > 0 ? `(${notifs.length})` : ''}
+            <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)} style={{ marginLeft: 'auto', padding: '2px 6px' }}>
+              <Icon.X />
+            </button>
+          </div>
+          {notifs.length === 0 ? (
+            <div className="notif-empty">확인할 새 알림이 없습니다 🎉</div>
+          ) : (
+            <div className="notif-list">
+              {notifs.map(n => {
+                const m = NOTIF_TYPE_META[n.type] || { icon: '🔔', label: '' };
+                return (
+                  <div key={n.id} className="notif-item" onClick={() => openStudent(n)}>
+                    <span className="notif-icon">{m.icon}</span>
+                    <div className="notif-body">
+                      <div className="notif-title"><b>{n.student_name}</b> <span className="muted">· {m.label}</span></div>
+                      <div className="notif-msg">{(n.message || '').replace(/[#*_>`~]/g, '').slice(0, 70)}</div>
+                      <div className="notif-time muted">
+                        {new Date(n.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                    <button className="btn btn-ghost btn-sm notif-dismiss" onClick={(e) => dismiss(e, n.id)} title="확인(알림 제거)">확인</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminDashboard({ cohortId, dangerThreshold, layout, onLogout, onSwitchCohort, onChangeLayout, onChangeThreshold }) {
   const cohort = window.STUDENT_ROSTER[cohortId];
   const cohortMeta = window.STORE.getCohort(cohortId);
@@ -107,6 +182,13 @@ function AdminDashboard({ cohortId, dangerThreshold, layout, onLogout, onSwitchC
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <AdminNotifications
+            cohortId={cohortId}
+            onOpenStudent={(sid) => {
+              const r = window.STORE.getDashboardRows(cohortId).find(x => x.student.id === sid);
+              if (r) setDrawer(r);
+            }}
+          />
           {/* View switch */}
           <div className="layout-switch">
             <button className={view === 'students' ? 'active' : ''} onClick={() => setView('students')}>👥 수강생</button>
@@ -582,6 +664,10 @@ function StudentDetail({ row, threshold, onClose, onUpdate }) {
     onUpdate();
   }
 
+  // 문서 탭 라벨/뱃지용 (렌더당 1회) — StudentDetail은 onChange로 재렌더되어 최신 반영
+  const studentDocs = window.STORE.listDocuments(s.id);
+  const docReviewCount = studentDocs.filter(d => d.status === 'review_requested').length;
+
   return (
     <>
       <div className="drawer-head">
@@ -602,6 +688,7 @@ function StudentDetail({ row, threshold, onClose, onUpdate }) {
           { k: 'overview', label: '개요' },
           { k: 'reports', label: `보고 (${reports.length})` },
           { k: 'jobs', label: `공고 (${jobs.length})`, alert: row.overduePlannedCount > 0 ? row.overduePlannedCount : null },
+          { k: 'docs', label: `문서 (${studentDocs.length})`, alert: (docReviewCount || null) },
           { k: 'comments', label: `코멘트 (${comments.length})` },
           { k: 'info', label: '연락처' }
         ].map(tt => (
@@ -742,6 +829,10 @@ function StudentDetail({ row, threshold, onClose, onUpdate }) {
               </div>
             </div>
           </>
+        )}
+
+        {tab === 'docs' && (
+          <DocumentsPanel student={s} viewerRole="admin" />
         )}
 
         {tab === 'info' && (

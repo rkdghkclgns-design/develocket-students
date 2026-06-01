@@ -131,6 +131,11 @@ function App() {
               📋 공고 관리
               <span className="tab-badge">{window.STORE.listJobs(me.id).length}</span>
             </button>
+            <button className={`tab ${tab === 'docs' ? 'active' : ''}`}
+              onClick={() => setTab('docs')}>
+              📁 이력서·포폴
+              <span className="tab-badge">{window.STORE.listDocuments(me.id).length}</span>
+            </button>
           </div>
         )}
 
@@ -147,9 +152,9 @@ function App() {
               onSwitchCohort={switchCohort}
             />
           ) : me ? (
-            tab === 'daily'
-              ? <DailyReportTab student={me} />
-              : <JobsTab student={me} />
+            tab === 'jobs' ? <JobsTab student={me} />
+              : tab === 'docs' ? <DocumentsPanel student={me} viewerRole="student" />
+              : <DailyReportTab student={me} />
           ) : (
             <div className="empty">
               <div className="big">⚠️</div>

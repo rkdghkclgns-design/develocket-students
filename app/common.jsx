@@ -235,6 +235,18 @@ function ProgressBar({ value }) {
   );
 }
 
+/* ----------- 안전한 href (javascript:/vbscript:/data:text/html 차단) -----------
+   사용자 입력(문서 링크, 첨부 등)을 <a href>로 렌더링하기 전 allowlist 검증.
+   허용: http(s):// , data:application/pdf;base64, , data:image/(png|jpe?g|gif|webp);base64 */
+function safeHref(url) {
+  if (!url || typeof url !== 'string') return '#';
+  const u = url.trim();
+  if (/^https?:\/\//i.test(u)) return u;
+  if (/^data:application\/pdf;base64,/i.test(u)) return u;
+  if (/^data:image\/(png|jpe?g|gif|webp);base64,/i.test(u)) return u;
+  return '#';
+}
+
 /* ----------- 코멘트 읽음 표시 (양방향 read receipt) -----------
    relative to the comment's author, has the *counterparty* read it?
    - 학생이 쓴 코멘트  → 관리자(admin_read_at) 가 읽었는가
@@ -259,7 +271,7 @@ Object.assign(window, {
   Avatar, Icon, MarkdownEditor, MarkdownView,
   StatusPicker, StatusPill, MoodPicker,
   ElapsedBadge, elapsedTier, Drawer, ProgressBar,
-  ReadReceipt, isCommentReadByCounterparty,
+  ReadReceipt, isCommentReadByCounterparty, safeHref,
   STATUS_OPTIONS, MOODS, MOOD_SCALE,
   normalizeMoodLevel, moodIcon, getMoodEntry
 });
