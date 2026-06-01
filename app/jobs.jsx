@@ -43,24 +43,139 @@ function InterestPicker({ value, onChange, compact = false }) {
   );
 }
 
+/* ===== 면접 차수 (1·2·3차 + 과제) ===== */
+const INTERVIEW_ROUNDS = ['1차', '2차', '3차', '과제'];
+const ROUND_STATUSES = ['대기', '불합', '합격'];
+const ROUND_STATUS_STYLES = {
+  '대기': { bg: 'var(--bg-2)',            color: 'var(--ink-mute)' },
+  '불합': { bg: 'var(--alert-danger-bg)', color: 'var(--alert-danger)' },
+  '합격': { bg: 'var(--alert-fresh-bg)',  color: 'var(--alert-fresh)' }
+};
+
+/* job.interview_rounds 의 합격/진행 요약 라벨 */
+function roundsSummary(job) {
+  const rs = Array.isArray(job.interview_rounds) ? job.interview_rounds : [];
+  if (rs.length === 0) return null;
+  const pass = rs.filter(r => r.status === '합격').length;
+  const fail = rs.filter(r => r.status === '불합').length;
+  return { count: rs.length, pass, fail };
+}
+
+function InterviewRoundsEditor({ job, onChange }) {
+  const rounds = Array.isArray(job.interview_rounds) ? job.interview_rounds : [];
+  const byRound = {};
+  rounds.forEach(r => { byRound[r.round] = r; });
+
+  function setRound(roundKey, patch) {
+    const existing = byRound[roundKey] || { round: roundKey, date: '', status: '대기', memo: '' };
+    Promise.resolve(window.STORE.setInterviewRound(job.id, { ...existing, ...patch })).then(() => onChange && onChange()).catch(() => {});
+  }
+  function removeRound(roundKey) {
+    Promise.resolve(window.STORE.removeInterviewRound(job.id, roundKey)).then(() => onChange && onChange()).catch(() => {});
+  }
+
+  return (
+    <div className="rounds-editor">
+      <div className="field-label" style={{ marginBottom: 8 }}>🎤 면접 이력 (차수별 일자 · 결과)</div>
+      {INTERVIEW_ROUNDS.map(rk => {
+        const r = byRound[rk];
+        const active = !!r;
+        return (
+          <div key={rk} className={`round-row ${active ? 'active' : ''}`}>
+            <span className="round-label">{rk}</span>
+            <input type="date" className="input round-date" value={(r && r.date) || ''}
+              onChange={e => setRound(rk, { date: e.target.value })} />
+            <div className="round-status-group">
+              {ROUND_STATUSES.map(st => {
+                const sel = r && r.status === st;
+                const stl = ROUND_STATUS_STYLES[st];
+                return (
+                  <button key={st}
+                    className="round-status-btn"
+                    style={sel ? { background: stl.bg, color: stl.color, fontWeight: 700, borderColor: stl.color } : {}}
+                    onClick={() => setRound(rk, { status: st })}>{st}</button>
+                );
+              })}
+            </div>
+            {active && (
+              <button className="btn btn-ghost btn-icon round-clear" onClick={() => removeRound(rk)} title="이 차수 제거">
+                <Icon.X />
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>일자나 결과를 누르면 해당 차수가 기록됩니다. 과제 전형도 동일하게 관리하세요.</div>
+    </div>
+  );
+}
+
+/* ===== 지원 → 면접 → 합격 도달률 (퍼널) ===== */
+function computeJobFunnel(jobs) {
+  const hasRounds = j => Array.isArray(j.interview_rounds) && j.interview_rounds.length > 0;
+  const total = jobs.length;
+  const applied = jobs.filter(j => j.applied_at || ['지원완료', '면접', '합격', '불합격'].includes(j.status) || hasRounds(j)).length;
+  const interviewing = jobs.filter(j => j.status === '면접' || hasRounds(j)).length;
+  const passed = jobs.filter(j => j.status === '합격' || (hasRounds(j) && j.interview_rounds.some(r => r.status === '합격'))).length;
+  return {
+    total, applied, interviewing, passed,
+    applyRate: total ? applied / total : 0,
+    interviewRate: applied ? interviewing / applied : 0,
+    passRate: interviewing ? passed / interviewing : 0
+  };
+}
+
+function FunnelCard({ funnel, title = '지원 → 면접 → 합격 도달률' }) {
+  const pct = n => Math.round((n || 0) * 100);
+  const stages = [
+    { label: '지원', value: funnel.applied,      sub: funnel.total ? `${pct(funnel.applyRate)}%` : '—',        color: '#1D4ED8' },
+    { label: '면접', value: funnel.interviewing, sub: funnel.applied ? `${pct(funnel.interviewRate)}%` : '—',  color: '#C2410C' },
+    { label: '합격', value: funnel.passed,       sub: funnel.interviewing ? `${pct(funnel.passRate)}%` : '—',  color: 'var(--alert-fresh)' }
+  ];
+  return (
+    <div className="funnel-card">
+      <div className="funnel-title">🎯 {title} <span className="muted" style={{ fontWeight: 500 }}>· 총 {funnel.total}건</span></div>
+      <div className="funnel-stages">
+        {stages.map((s, i) => (
+          <React.Fragment key={s.label}>
+            {i > 0 && <span className="funnel-arrow">→</span>}
+            <div className="funnel-stage">
+              <div className="funnel-value" style={{ color: s.color }}>{s.value}</div>
+              <div className="funnel-label">{s.label}</div>
+              <div className="funnel-rate">{s.sub}</div>
+            </div>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function JobsTab({ student }) {
   const [jobs, setJobs] = useState([]);
   const [search, setSearch] = useState('');
-  const [editing, setEditing] = useState(null); // id of row being memo-edited
+  const [editing, setEditing] = useState(null); // id of row being memo/면접-edited
   const [showAdd, setShowAdd] = useState(false);
+  const [viewMode, setViewMode] = useState('all'); // 'all' | 'interview'
 
   function reload() { setJobs(window.STORE.listJobs(student.id)); }
-  useEffect(() => { reload(); }, [student.id]);
+  useEffect(() => { reload(); return window.STORE.onChange(reload); }, [student.id]);
+
+  const funnel = useMemo(() => computeJobFunnel(jobs), [jobs]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return jobs;
+    let list = jobs;
+    if (viewMode === 'interview') {
+      list = list.filter(j => (Array.isArray(j.interview_rounds) && j.interview_rounds.length > 0) || j.status === '면접');
+    }
     const q = search.trim().toLowerCase();
-    return jobs.filter(j =>
+    if (q) list = list.filter(j =>
       (j.title || '').toLowerCase().includes(q) ||
       (j.company || '').toLowerCase().includes(q) ||
       (j.role || '').toLowerCase().includes(q)
     );
-  }, [jobs, search]);
+    return list;
+  }, [jobs, search, viewMode]);
 
   const today = window.STORE_HELPERS.todayStr();
   function dueState(due) {
@@ -116,10 +231,17 @@ function JobsTab({ student }) {
             value={search} onChange={e => setSearch(e.target.value)} />
         </div>
 
+        <div className="layout-switch" style={{ marginLeft: 'auto' }}>
+          <button className={viewMode === 'all' ? 'active' : ''} onClick={() => setViewMode('all')}>전체</button>
+          <button className={viewMode === 'interview' ? 'active' : ''} onClick={() => setViewMode('interview')}>🎤 면접 진행</button>
+        </div>
+
         <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(true)}>
           <Icon.Plus /> 공고 추가
         </button>
       </div>
+
+      {jobs.length > 0 && <FunnelCard funnel={funnel} />}
 
       <div className="card table-card">
         <div style={{ overflowX: 'auto' }}>
@@ -133,8 +255,10 @@ function JobsTab({ student }) {
                 <th>상태</th>
                 <th>등록일</th>
                 <th>지원 예정일</th>
+                <th>지원일</th>
                 <th>마감일</th>
                 <th style={{ width: 90 }}>관심도</th>
+                <th style={{ width: 96 }}>면접</th>
                 <th>비고 (마크다운)</th>
                 <th style={{ width: 60 }}></th>
               </tr>
@@ -152,7 +276,7 @@ function JobsTab({ student }) {
                         <input className="input" style={{ padding: '6px 8px', border: 'none', fontWeight: 500, background: 'transparent', color: 'var(--brand-primary)' }}
                           value={j.title} onChange={e => update(j.id, { title: e.target.value })} />
                         {j.url && j.url !== '#' && (
-                          <a href={j.url} target="_blank" rel="noopener" style={{ marginLeft: 4 }}>
+                          <a href={safeHref(j.url)} target="_blank" rel="noopener" style={{ marginLeft: 4 }}>
                             <Icon.External />
                           </a>
                         )}
@@ -183,6 +307,10 @@ function JobsTab({ student }) {
                         </div>
                       </td>
                       <td>
+                        <input type="date" className="input" style={{ padding: '6px 8px', border: 'none', background: 'transparent', fontSize: 12 }}
+                          value={j.applied_at || ''} onChange={e => update(j.id, { applied_at: e.target.value })} title="실제 지원한 날짜" />
+                      </td>
+                      <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                           <input type="date" className="input" style={{ padding: '6px 8px', border: 'none', background: 'transparent', fontSize: 12 }}
                             value={j.due_date || ''} onChange={e => update(j.id, { due_date: e.target.value })} />
@@ -191,6 +319,19 @@ function JobsTab({ student }) {
                       </td>
                       <td>
                         <InterestPicker value={j.interest} onChange={v => update(j.id, { interest: v })} compact />
+                      </td>
+                      <td>
+                        {(() => {
+                          const rs = roundsSummary(j);
+                          return (
+                            <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px', whiteSpace: 'nowrap' }}
+                              onClick={() => setEditing(editing === j.id ? null : j.id)} title="면접 차수 기록">
+                              {rs
+                                ? <span style={{ fontSize: 12, fontWeight: 600 }}>🎤 {rs.count}{rs.pass ? ` ·합${rs.pass}` : ''}{rs.fail ? ` ·불${rs.fail}` : ''}</span>
+                                : <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>＋ 면접</span>}
+                            </button>
+                          );
+                        })()}
                       </td>
                       <td style={{ minWidth: 200 }}>
                         <button
@@ -212,15 +353,18 @@ function JobsTab({ student }) {
                     </tr>
                     {editing === j.id && (
                       <tr>
-                        <td colSpan="11" style={{ padding: '0 12px 16px', background: 'var(--surface-2)' }}>
-                          <div style={{ paddingTop: 12 }}>
-                            <div className="field-label" style={{ marginBottom: 8 }}>📝 비고 / 메모 (마크다운 지원)</div>
-                            <MarkdownEditor
-                              value={j.memo || ''}
-                              onChange={v => update(j.id, { memo: v })}
-                              placeholder="이 공고에 대한 메모, 자기소개서 초안, 면접 후기 등을 자유롭게 작성하세요"
-                              rows={5}
-                            />
+                        <td colSpan="13" style={{ padding: '0 12px 16px', background: 'var(--surface-2)' }}>
+                          <div style={{ paddingTop: 12, display: 'grid', gap: 16 }}>
+                            <InterviewRoundsEditor job={j} onChange={reload} />
+                            <div>
+                              <div className="field-label" style={{ marginBottom: 8 }}>📝 비고 / 메모 (마크다운 지원)</div>
+                              <MarkdownEditor
+                                value={j.memo || ''}
+                                onChange={v => update(j.id, { memo: v })}
+                                placeholder="이 공고에 대한 메모, 자기소개서 초안, 면접 후기 등을 자유롭게 작성하세요"
+                                rows={5}
+                              />
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -229,10 +373,12 @@ function JobsTab({ student }) {
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan="11">
+                <tr><td colSpan="13">
                   <div className="empty">
                     <div className="big">🔎</div>
-                    {search ? '검색 결과가 없습니다' : '아직 등록된 공고가 없습니다'}
+                    {search ? '검색 결과가 없습니다'
+                      : viewMode === 'interview' ? '면접이 진행 중인 공고가 없습니다'
+                      : '아직 등록된 공고가 없습니다'}
                   </div>
                 </td></tr>
               )}
@@ -253,6 +399,7 @@ function AddJobModal({ onAdd, onClose }) {
     status: '미지원', interest: 5,
     registered_at: todayStr,
     planned_apply_date: '',
+    applied_at: '',
     due_date: '',
     memo: ''
   });
@@ -316,6 +463,11 @@ function AddJobModal({ onAdd, onClose }) {
               <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>내가 지원하기로 계획한 날짜</div>
             </div>
             <div>
+              <div className="field-label">📌 실제 지원일</div>
+              <input type="date" className="input" value={form.applied_at} onChange={e => update('applied_at', e.target.value)} />
+              <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>실제로 지원서를 제출한 날짜</div>
+            </div>
+            <div>
               <div className="field-label">⏰ 공고 마감일</div>
               <input type="date" className="input" value={form.due_date} onChange={e => update('due_date', e.target.value)} />
               <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>회사가 공고를 닫는 날짜</div>
@@ -340,3 +492,8 @@ function AddJobModal({ onAdd, onClose }) {
 window.JobsTab = JobsTab;
 window.JOB_STATUS_STYLES = JOB_STATUS_STYLES;
 window.JOB_STATUSES = JOB_STATUSES;
+window.FunnelCard = FunnelCard;
+window.computeJobFunnel = computeJobFunnel;
+window.InterviewRoundsEditor = InterviewRoundsEditor;
+window.roundsSummary = roundsSummary;
+window.ROUND_STATUS_STYLES = ROUND_STATUS_STYLES;

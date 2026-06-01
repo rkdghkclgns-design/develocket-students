@@ -311,6 +311,9 @@ function AdminDashboard({ cohortId, dangerThreshold, layout, onLogout, onSwitchC
         />
       </div>
 
+      {/* 지원 → 면접 → 합격 도달률 (기수 단위) */}
+      <FunnelCard funnel={window.STORE.getJobFunnel(cohortId)} title="기수 지원 → 면접 → 합격 도달률" />
+
       {/* Search */}
       <div className="admin-search">
         <div className="student-search" style={{ marginBottom: 0, flex: 1 }}>
@@ -961,6 +964,10 @@ function StudentJobsPanel({ student, jobs, onChange }) {
                   </span>
                 </div>
                 <div className="sj-date">
+                  <span className="sjd-k">📌 지원일</span>
+                  <span className="sjd-v">{j.applied_at || '—'}</span>
+                </div>
+                <div className="sj-date">
                   <span className="sjd-k">⏰ 마감</span>
                   <span className="sjd-v">
                     {j.due_date || '—'}
@@ -972,6 +979,10 @@ function StudentJobsPanel({ student, jobs, onChange }) {
                   </span>
                 </div>
               </div>
+              <details className="sj-memo" open={Array.isArray(j.interview_rounds) && j.interview_rounds.length > 0}>
+                <summary>🎤 면접 이력 {(() => { const s = roundsSummary(j); return s ? `(${s.count}회${s.pass ? ` ·합격${s.pass}` : ''}${s.fail ? ` ·불합${s.fail}` : ''})` : '기록'; })()}</summary>
+                <InterviewRoundsEditor job={j} onChange={onChange} />
+              </details>
               {j.memo && (
                 <details className="sj-memo">
                   <summary>📝 비고 보기</summary>
@@ -979,7 +990,7 @@ function StudentJobsPanel({ student, jobs, onChange }) {
                 </details>
               )}
               {j.url && j.url !== '#' && (
-                <a href={j.url} target="_blank" rel="noopener" className="sj-link">
+                <a href={safeHref(j.url)} target="_blank" rel="noopener" className="sj-link">
                   <Icon.External /> 공고 원문 보기
                 </a>
               )}

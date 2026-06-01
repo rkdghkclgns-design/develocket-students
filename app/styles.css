@@ -1250,6 +1250,38 @@ input, textarea, select { font-family: inherit; }
 .notif-time { font-size: 11px; }
 .notif-dismiss { padding: 3px 8px; font-size: 11px; white-space: nowrap; }
 
+/* ============= 면접 차수 에디터 ============= */
+.rounds-editor { background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px 14px; }
+.round-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
+.round-row.active { }
+.round-label {
+  width: 40px; font-weight: 700; font-size: 13px; color: var(--ink-soft);
+  text-align: center; flex-shrink: 0;
+}
+.round-row.active .round-label { color: var(--brand-primary); }
+.round-date { padding: 5px 8px !important; font-size: 12px; max-width: 150px; }
+.round-status-group { display: inline-flex; gap: 4px; }
+.round-status-btn {
+  border: 1px solid var(--line); background: var(--surface);
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: var(--ink-mute); cursor: pointer; transition: all 0.12s var(--ease);
+}
+.round-status-btn:hover { border-color: var(--brand-primary); }
+.round-clear { padding: 2px 6px; color: var(--ink-mute); }
+
+/* ============= 도달률 퍼널 카드 ============= */
+.funnel-card {
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--r-md); padding: 12px 16px; margin-bottom: 16px;
+}
+.funnel-title { font-size: 13px; font-weight: 700; color: var(--ink-soft); margin-bottom: 8px; }
+.funnel-stages { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.funnel-stage { text-align: center; min-width: 64px; }
+.funnel-value { font-size: 24px; font-weight: 800; line-height: 1.1; }
+.funnel-label { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+.funnel-rate { font-size: 11px; color: var(--ink-mute); font-weight: 600; }
+.funnel-arrow { font-size: 18px; color: var(--ink-faint); font-weight: 700; }
+
 /* Big stat / chart */
 .chart-card { padding: 20px; }
 .bar-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
