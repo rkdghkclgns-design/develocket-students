@@ -136,6 +136,16 @@ function App() {
               📁 이력서·포폴
               <span className="tab-badge">{window.STORE.listDocuments(me.id).length}</span>
             </button>
+            <button className={`tab ${tab === 'mentoring' ? 'active' : ''}`}
+              onClick={() => setTab('mentoring')}>
+              📅 멘토링
+              {(() => {
+                const all = window.STORE.listMentoring({ studentId: me.id });
+                const pending = all.filter(m => m.status === 'completed' && !m.student_notes).length;
+                return pending > 0 ? <span className="tab-badge" style={{ background: 'var(--alert-warn)' }}>!{pending}</span> :
+                  (all.length > 0 ? <span className="tab-badge">{all.length}</span> : null);
+              })()}
+            </button>
           </div>
         )}
 
@@ -154,6 +164,7 @@ function App() {
           ) : me ? (
             tab === 'jobs' ? <JobsTab student={me} />
               : tab === 'docs' ? <DocumentsPanel student={me} viewerRole="student" />
+              : tab === 'mentoring' ? <StudentMentoringTab student={me} />
               : <DailyReportTab student={me} />
           ) : (
             <div className="empty">

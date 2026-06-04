@@ -376,4 +376,385 @@ function AttendancePanel({ cohortId, type, kind }) {
   );
 }
 
-Object.assign(window, { AdminKPIBar, StudentAdminPanel, AttendancePanel, EMP_STATUSES, GRADE_OPTIONS });
+/* ==========================================================================
+   📅 AdminMentoringPanel — 캘린더 + 일자/시간 리스트 (관리자 전용)
+   ========================================================================== */
+function AdminMentoringPanel({ cohortId }) {
+  const today = window.STORE_HELPERS.todayStr();
+  const [_, force] = useState(0);
+  const [viewMode, setViewMode] = useState('calendar');
+  const [cursor, setCursor] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [editing, setEditing] = useState(null);
+
+  useEffect(() => {
+    const unsub = window.STORE.onChange(() => force(v => v + 1));
+    return unsub;
+  }, []);
+
+  const students = useMemo(() => window.STORE.listStudents(cohortId), [cohortId, _]);
+  const studentMap = useMemo(() => {
+    const m = {}; students.forEach(s => { m[s.id] = s; }); return m;
+  }, [students]);
+  const sessions = useMemo(() => window.STORE.listMentoring({ cohort: cohortId }), [cohortId, _]);
+  const sessionsByDate = useMemo(() => {
+    const g = {};
+    sessions.forEach(s => {
+      const d = (s.scheduled_at || '').slice(0, 10);
+      if (!d) return;
+      g[d] = g[d] || [];
+      g[d].push(s);
+    });
+    return g;
+  }, [sessions]);
+
+  function moveMonth(delta) {
+    const next = new Date(cursor);
+    next.setMonth(next.getMonth() + delta);
+    setCursor(next);
+  }
+  function goToday() {
+    const t = new Date();
+    setCursor(t);
+    setSelectedDate(window.STORE_HELPERS.todayStr(t));
+  }
+  function buildMonthGrid() {
+    const y = cursor.getFullYear();
+    const m = cursor.getMonth();
+    const first = new Date(y, m, 1);
+    const startWeekday = first.getDay();
+    const lastDay = new Date(y, m + 1, 0).getDate();
+    const grid = [];
+    for (let i = 0; i < startWeekday; i++) grid.push(null);
+    for (let d = 1; d <= lastDay; d++) {
+      const dt = new Date(y, m, d);
+      grid.push(window.STORE_HELPERS.todayStr(dt));
+    }
+    while (grid.length < 42) grid.push(null);
+    return grid;
+  }
+  const monthLabel = `${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월`;
+  const grid = useMemo(buildMonthGrid, [cursor]);
+  const selectedSessions = sessionsByDate[selectedDate] || [];
+
+  return (
+    <div className="mentoring-panel">
+      <div className="att-head" style={{ marginBottom: 14 }}>
+        <div>
+          <div className="h3" style={{ margin: 0 }}>📅 멘토링 일정</div>
+          <div className="muted" style={{ fontSize: 12 }}>
+            관리자 전용 · 일자별 면담·멘토링 예정 확인 · {sessions.length}건 ({window.STUDENT_ROSTER[cohortId]?.label || cohortId})
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="layout-switch">
+            <button className={viewMode === 'calendar' ? 'active' : ''}
+              onClick={() => setViewMode('calendar')}>🗓 캘린더</button>
+            <button className={viewMode === 'list' ? 'active' : ''}
+              onClick={() => setViewMode('list')}>📋 리스트</button>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={() => {
+            setEditing({
+              student_id: students[0]?.id || '',
+              scheduled_at: selectedDate + 'T14:00',
+              duration_min: 30,
+              topic: '', location: '', mentor: '관리자',
+              status: 'scheduled', admin_notes: '', student_notes: ''
+            });
+          }}>+ 세션 추가</button>
+        </div>
+      </div>
+
+      {viewMode === 'calendar' && (
+        <>
+          <div className="mentoring-month-nav">
+            <button className="btn btn-secondary btn-sm" onClick={() => moveMonth(-1)}>← 이전 달</button>
+            <div style={{ fontSize: 16, fontWeight: 700, flex: 1, textAlign: 'center' }}>{monthLabel}</div>
+            <button className="btn btn-ghost btn-sm" onClick={goToday}>오늘</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => moveMonth(1)}>다음 달 →</button>
+          </div>
+          <div className="mentoring-cal">
+            {['일', '월', '화', '수', '목', '금', '토'].map(d => (
+              <div key={d} className="mentoring-cal-dow">{d}</div>
+            ))}
+            {grid.map((dateStr, i) => {
+              if (!dateStr) return <div key={i} className="mentoring-cal-cell empty"></div>;
+              const day = parseInt(dateStr.slice(8, 10), 10);
+              const dayOfWeek = i % 7;
+              const list = sessionsByDate[dateStr] || [];
+              const isToday = dateStr === today;
+              const isSelected = dateStr === selectedDate;
+              return (
+                <div key={i}
+                  className={`mentoring-cal-cell ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''} ${dayOfWeek === 0 ? 'sun' : ''} ${dayOfWeek === 6 ? 'sat' : ''}`}
+                  onClick={() => setSelectedDate(dateStr)}>
+                  <div className="mentoring-cal-day">{day}</div>
+                  {list.slice(0, 3).map(s => {
+                    const st = studentMap[s.student_id];
+                    return (
+                      <div key={s.id} className={`mentoring-cal-pill status-${s.status}`}
+                        title={`${(s.scheduled_at || '').slice(11, 16)} · ${st?.name || s.student_id} · ${s.topic || ''}`}>
+                        <span className="mt-time">{(s.scheduled_at || '').slice(11, 16)}</span>
+                        <span className="mt-name">{st?.name || '?'}</span>
+                      </div>
+                    );
+                  })}
+                  {list.length > 3 && (
+                    <div className="mentoring-cal-more">+{list.length - 3}건</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mentoring-day-detail">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>
+                📌 {selectedDate} ({selectedSessions.length}건)
+              </div>
+            </div>
+            {selectedSessions.length === 0 ? (
+              <div className="muted" style={{ fontSize: 13 }}>이 날짜에 예정된 멘토링이 없습니다.</div>
+            ) : (
+              <div className="mentoring-day-list">
+                {selectedSessions.map(s => (
+                  <MentoringRow key={s.id} session={s} student={studentMap[s.student_id]}
+                    onEdit={() => setEditing(s)}
+                    onDelete={async () => {
+                      if (!confirm('이 멘토링 세션을 삭제할까요?')) return;
+                      try {
+                        const r = window.STORE.deleteMentoring(s.id);
+                        if (r && typeof r.then === 'function') await r;
+                      } catch (e) { alert('삭제 실패: ' + e.message); }
+                    }}
+                    onStatusChange={async (newStatus) => {
+                      try {
+                        const r = window.STORE.upsertMentoring({ ...s, status: newStatus });
+                        if (r && typeof r.then === 'function') await r;
+                      } catch (e) { alert('상태 변경 실패: ' + e.message); }
+                    }} />
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {viewMode === 'list' && (
+        <div className="mentoring-list-view">
+          {sessions.length === 0 ? (
+            <div className="empty"><div className="big">📅</div>예정된 멘토링이 없습니다</div>
+          ) : (
+            <div className="mentoring-day-list">
+              {sessions.map(s => (
+                <MentoringRow key={s.id} session={s} student={studentMap[s.student_id]} showDate
+                  onEdit={() => setEditing(s)}
+                  onDelete={async () => {
+                    if (!confirm('이 멘토링 세션을 삭제할까요?')) return;
+                    try {
+                      const r = window.STORE.deleteMentoring(s.id);
+                      if (r && typeof r.then === 'function') await r;
+                    } catch (e) { alert('삭제 실패: ' + e.message); }
+                  }}
+                  onStatusChange={async (newStatus) => {
+                    try {
+                      const r = window.STORE.upsertMentoring({ ...s, status: newStatus });
+                      if (r && typeof r.then === 'function') await r;
+                    } catch (e) { alert('상태 변경 실패: ' + e.message); }
+                  }} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {editing && (
+        <MentoringEditModal
+          initial={editing}
+          students={students}
+          onClose={() => setEditing(null)}
+          onSave={async (payload) => {
+            try {
+              const r = window.STORE.upsertMentoring(payload);
+              if (r && typeof r.then === 'function') await r;
+              setEditing(null);
+            } catch (e) {
+              alert('저장 실패: ' + e.message);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function MentoringRow({ session, student, showDate, onEdit, onDelete, onStatusChange }) {
+  const s = session;
+  const dt = s.scheduled_at || '';
+  const date = dt.slice(0, 10);
+  const time = dt.slice(11, 16);
+  const statusLabel = {
+    scheduled: '예정', completed: '완료', cancelled: '취소', no_show: '불참'
+  }[s.status] || s.status;
+  return (
+    <div className={`mentoring-row status-${s.status}`}>
+      <div className="mentoring-row-time">
+        {showDate && <div className="mr-date">{date}</div>}
+        <div className="mr-clock">⏰ {time}</div>
+        <div className="mr-dur">{s.duration_min}분</div>
+      </div>
+      <div className="mentoring-row-body">
+        <div className="mentoring-row-head">
+          <Avatar name={student?.name || '?'} size={28} />
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{student?.name || s.student_id}</div>
+          <span className={`pill status-pill-${s.status}`}>{statusLabel}</span>
+          {s.student_notes && <span className="pill" style={{ background: 'var(--alert-fresh-bg)', color: 'var(--alert-fresh)', fontSize: 10 }}>✓ 학생 기록</span>}
+        </div>
+        {s.topic && <div className="mentoring-row-topic">📌 {s.topic}</div>}
+        {s.location && <div className="muted" style={{ fontSize: 12 }}>📍 {s.location}</div>}
+        {s.mentor && <div className="muted" style={{ fontSize: 12 }}>🎓 {s.mentor}</div>}
+        {s.admin_notes && (
+          <details className="mentoring-row-notes">
+            <summary>관리자 의제</summary>
+            <MarkdownView text={s.admin_notes} />
+          </details>
+        )}
+        {s.student_notes && (
+          <details className="mentoring-row-notes">
+            <summary>🧑‍🎓 학생 기록 {s.student_notes_updated_at && `(${new Date(s.student_notes_updated_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })})`}</summary>
+            <MarkdownView text={s.student_notes} />
+          </details>
+        )}
+      </div>
+      <div className="mentoring-row-actions">
+        <select className="select" style={{ padding: '4px 8px', fontSize: 11 }}
+          value={s.status} onChange={e => onStatusChange(e.target.value)}>
+          <option value="scheduled">예정</option>
+          <option value="completed">완료</option>
+          <option value="cancelled">취소</option>
+          <option value="no_show">불참</option>
+        </select>
+        <button className="btn btn-ghost btn-sm" onClick={onEdit} title="편집"><Icon.Edit /></button>
+        <button className="btn btn-ghost btn-sm" onClick={onDelete} title="삭제" style={{ color: 'var(--alert-danger)' }}><Icon.Trash /></button>
+      </div>
+    </div>
+  );
+}
+
+function MentoringEditModal({ initial, students, onClose, onSave }) {
+  const [form, setForm] = useState({
+    id: initial.id || '',
+    student_id: initial.student_id || (students[0]?.id || ''),
+    scheduled_at: initial.scheduled_at || '',
+    duration_min: initial.duration_min ?? 30,
+    topic: initial.topic || '',
+    location: initial.location || '',
+    mentor: initial.mentor || '관리자',
+    status: initial.status || 'scheduled',
+    admin_notes: initial.admin_notes || '',
+    student_notes: initial.student_notes || '',
+    student_notes_updated_at: initial.student_notes_updated_at || null,
+    created_by: initial.created_by || 'admin',
+    created_at: initial.created_at || new Date().toISOString()
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  function up(k, v) { setForm(f => ({ ...f, [k]: v })); }
+  async function submit() {
+    if (!form.student_id) { alert('수강생을 선택하세요'); return; }
+    if (!form.scheduled_at) { alert('일자/시간을 입력하세요'); return; }
+    setSubmitting(true);
+    try {
+      await onSave({ ...form });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const isNew = !form.id;
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{ maxWidth: 560 }}>
+        <div className="drawer-head">
+          <div>
+            <div className="h2" style={{ margin: 0 }}>{isNew ? '📅 새 멘토링 세션' : '✏️ 멘토링 편집'}</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+              {isNew ? '새 멘토링 일정을 추가합니다' : '기존 세션을 수정합니다'}
+            </div>
+          </div>
+          <button className="drawer-close" onClick={onClose}><Icon.X /></button>
+        </div>
+        <div className="drawer-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div className="field-label">수강생 *</div>
+            <select className="select" value={form.student_id} onChange={e => up('student_id', e.target.value)}>
+              {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="field-label">일자·시간 *</div>
+            <input type="datetime-local" className="input"
+              value={(form.scheduled_at || '').slice(0, 16)}
+              onChange={e => up('scheduled_at', e.target.value)} />
+          </div>
+          <div>
+            <div className="field-label">진행 시간(분)</div>
+            <input type="number" className="input"
+              value={form.duration_min}
+              onChange={e => up('duration_min', parseInt(e.target.value) || 30)} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div className="field-label">주제</div>
+            <input className="input" value={form.topic} onChange={e => up('topic', e.target.value)}
+              placeholder="예: 자기소개서 피드백, 면접 모의" />
+          </div>
+          <div>
+            <div className="field-label">장소</div>
+            <input className="input" value={form.location} onChange={e => up('location', e.target.value)}
+              placeholder="예: 강의실 A / Zoom" />
+          </div>
+          <div>
+            <div className="field-label">멘토</div>
+            <input className="input" value={form.mentor} onChange={e => up('mentor', e.target.value)} />
+          </div>
+          <div>
+            <div className="field-label">상태</div>
+            <select className="select" value={form.status} onChange={e => up('status', e.target.value)}>
+              <option value="scheduled">예정</option>
+              <option value="completed">완료</option>
+              <option value="cancelled">취소</option>
+              <option value="no_show">불참</option>
+            </select>
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div className="field-label">관리자 의제 <span style={{ fontWeight: 400, color: 'var(--ink-mute)' }}>(학생도 봄)</span></div>
+            <MarkdownEditor value={form.admin_notes} onChange={v => up('admin_notes', v)}
+              placeholder="멘토링에서 다룰 주제·자료·체크리스트" rows={3} minimal />
+          </div>
+          {!isNew && form.student_notes && (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="field-label">🧑‍🎓 학생 사후 기록</div>
+              <div style={{ padding: 10, background: 'var(--surface-2)', borderRadius: 'var(--r-sm)', fontSize: 13 }}>
+                <MarkdownView text={form.student_notes} />
+              </div>
+              <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                * 학생 본인이 작성. 관리자는 열람만 가능
+              </div>
+            </div>
+          )}
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn btn-secondary" onClick={onClose} disabled={submitting}>취소</button>
+            <button className="btn btn-primary" onClick={submit} disabled={submitting}
+              style={{ flex: 1, opacity: submitting ? 0.7 : 1, cursor: submitting ? 'wait' : 'pointer' }}>
+              {submitting ? '⏳ 저장 중…' : (isNew ? '+ 추가' : '💾 저장')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, {
+  AdminKPIBar, StudentAdminPanel, AttendancePanel, EMP_STATUSES, GRADE_OPTIONS,
+  AdminMentoringPanel, MentoringRow, MentoringEditModal
+});

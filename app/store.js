@@ -304,6 +304,7 @@
         counseling: [],
         comment_reads: [],
         notif_dismissals: [],
+        mentoring_sessions: [],
         cohort_meta,
         admin_meta: { version: 6 }
       };
@@ -1007,6 +1008,60 @@
       ).length;
     }
 
+    /* ===== 멘토링 세션 (캘린더 기반) ===== */
+    listMentoring(opts = {}) {
+      let list = (this.db.mentoring_sessions || []).slice();
+      if (opts.studentId) list = list.filter(m => m.student_id === opts.studentId);
+      if (opts.cohort) {
+        const ids = new Set(this.listStudents(opts.cohort).map(s => s.id));
+        list = list.filter(m => ids.has(m.student_id));
+      }
+      if (opts.from) list = list.filter(m => m.scheduled_at >= opts.from);
+      if (opts.to) list = list.filter(m => m.scheduled_at <= opts.to);
+      if (opts.status) list = list.filter(m => m.status === opts.status);
+      list.sort((a, b) => (a.scheduled_at || '').localeCompare(b.scheduled_at || ''));
+      return list;
+    }
+    upsertMentoring(payload) {
+      if (!this.db.mentoring_sessions) this.db.mentoring_sessions = [];
+      const id = payload.id || uid('mt');
+      const idx = this.db.mentoring_sessions.findIndex(m => m.id === id);
+      const row = {
+        id,
+        student_id: payload.student_id,
+        scheduled_at: payload.scheduled_at,
+        duration_min: payload.duration_min ?? 30,
+        topic: payload.topic || '',
+        location: payload.location || '',
+        mentor: payload.mentor || '관리자',
+        status: payload.status || 'scheduled',
+        admin_notes: payload.admin_notes || '',
+        student_notes: payload.student_notes || '',
+        student_notes_updated_at: payload.student_notes_updated_at || null,
+        created_by: payload.created_by || 'admin',
+        created_at: payload.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      if (idx >= 0) this.db.mentoring_sessions[idx] = row;
+      else this.db.mentoring_sessions.push(row);
+      this._save();
+      return row;
+    }
+    deleteMentoring(id) {
+      if (!this.db.mentoring_sessions) return;
+      this.db.mentoring_sessions = this.db.mentoring_sessions.filter(m => m.id !== id);
+      this._save();
+    }
+    updateMentoringStudentNotes(id, notes) {
+      if (!this.db.mentoring_sessions) return;
+      const m = this.db.mentoring_sessions.find(x => x.id === id);
+      if (!m) return;
+      m.student_notes = notes || '';
+      m.student_notes_updated_at = new Date().toISOString();
+      m.updated_at = m.student_notes_updated_at;
+      this._save();
+    }
+
     /* ===== KPI computations ===== */
     getEmploymentStats(cohort) {
       // 모수: cohort 학생 중 excluded_from_pool=false
@@ -1066,7 +1121,9 @@
     evaluations: 'dl_evaluations',
     counseling: 'dl_counseling',
     comment_reads: 'dl_comment_reads',
-    notif_dismissals: 'dl_notification_dismissals'
+    notif_dismissals: 'dl_notification_dismissals',
+    // 캘린더 기반 멘토링 (신규)
+    mentoring_sessions: 'dl_mentoring_sessions'
   };
   // DB row → UI student
   function fromDbStudent(r) {
@@ -1095,13 +1152,15 @@
         // 2026-06 건의사항 신규 컬렉션
         documents: [], career_requests: [], evaluations: [],
         counseling: [], comment_reads: [], notif_dismissals: [],
+        mentoring_sessions: [],
         cohort_meta: {}, admin_meta: {}
       };
       this.ready = this._bootstrap();
     }
     async _bootstrap() {
       const [cohorts, students, reports, jobs, comments, attendance,
-             documents, careerReqs, evaluations, counseling, commentReads, notifDismissals] = await Promise.all([
+             documents, careerReqs, evaluations, counseling, commentReads, notifDismissals,
+             mentoring] = await Promise.all([
         this.client.from(SB_TABLES.cohorts).select('*'),
         this.client.from(SB_TABLES.students).select('*'),
         this.client.from(SB_TABLES.daily_reports).select('*'),
@@ -1114,7 +1173,9 @@
         this.client.from(SB_TABLES.evaluations).select('*'),
         this.client.from(SB_TABLES.counseling).select('*'),
         this.client.from(SB_TABLES.comment_reads).select('*'),
-        this.client.from(SB_TABLES.notif_dismissals).select('*')
+        this.client.from(SB_TABLES.notif_dismissals).select('*'),
+        // 캘린더 기반 멘토링 (신규)
+        this.client.from(SB_TABLES.mentoring_sessions).select('*')
       ]);
       this.db.students      = (students.data || []).map(fromDbStudent);
       this.db.daily_reports = reports.data  || [];
@@ -1127,6 +1188,7 @@
       this.db.counseling       = counseling.data      || [];
       this.db.comment_reads    = commentReads.data    || [];
       this.db.notif_dismissals = notifDismissals.data || [];
+      this.db.mentoring_sessions = mentoring.data || [];
 
       // cohort_meta: dl_cohorts → STUDENT_ROSTER 갱신 (기존 시드에 없는 cohort 등록)
       (cohorts.data || []).forEach(c => {
@@ -1643,6 +1705,59 @@
       return this.db.attendance.filter(a =>
         a.student_id === studentId && a.type === type && a.attended
       ).length;
+    }
+
+    /* ===== 멘토링 세션 (Supabase) ===== */
+    listMentoring(opts) { return LocalAdapter.prototype.listMentoring.call(this, opts); }
+    async upsertMentoring(payload) {
+      const row = LocalAdapter.prototype.upsertMentoring.call(this, payload);
+      this._notify();
+      try {
+        const { data, error } = await this.client
+          .from(SB_TABLES.mentoring_sessions)
+          .upsert(row).select().single();
+        if (error) throw error;
+        const i = this.db.mentoring_sessions.findIndex(m => m.id === row.id);
+        if (i >= 0) this.db.mentoring_sessions[i] = data;
+      } catch (err) {
+        console.error('[upsertMentoring] 실패:', err);
+        throw new Error('Supabase 동기화 실패: ' + (err.message || err));
+      }
+      this._notify();
+      return row;
+    }
+    async deleteMentoring(id) {
+      LocalAdapter.prototype.deleteMentoring.call(this, id);
+      this._notify();
+      try {
+        const { error } = await this.client
+          .from(SB_TABLES.mentoring_sessions)
+          .delete().eq('id', id);
+        if (error) throw error;
+      } catch (err) {
+        console.error('[deleteMentoring] 실패:', err);
+        throw new Error('Supabase 동기화 실패: ' + (err.message || err));
+      }
+      this._notify();
+    }
+    async updateMentoringStudentNotes(id, notes) {
+      LocalAdapter.prototype.updateMentoringStudentNotes.call(this, id, notes);
+      this._notify();
+      try {
+        const m = this.db.mentoring_sessions.find(x => x.id === id);
+        const patch = {
+          student_notes: m ? m.student_notes : (notes || ''),
+          student_notes_updated_at: m ? m.student_notes_updated_at : new Date().toISOString()
+        };
+        const { error } = await this.client
+          .from(SB_TABLES.mentoring_sessions)
+          .update(patch).eq('id', id);
+        if (error) throw error;
+      } catch (err) {
+        console.error('[updateMentoringStudentNotes] 실패:', err);
+        throw new Error('Supabase 동기화 실패: ' + (err.message || err));
+      }
+      this._notify();
     }
 
     /* ===== dashboard / employment stats / cohorts ===== */

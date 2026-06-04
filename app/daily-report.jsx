@@ -484,6 +484,10 @@ function AdminFeedbackCard({ student }) {
   const [readState, setReadState] = useState({ admin_read_at: null, student_read_at: null });
   const [replyText, setReplyText] = useState('');
   const [showReply, setShowReply] = useState(false);
+  // 각 코멘트별 접힘 상태 + 카드 전체 컴팩트 토글
+  const [collapsed, setCollapsed] = useState({});
+  const [compactMode, setCompactMode] = useState(false);
+  function toggleCollapsed(id) { setCollapsed(s => ({ ...s, [id]: !s[id] })); }
 
   function reload() {
     // 최신 메시지부터 (역순)
@@ -517,10 +521,24 @@ function AdminFeedbackCard({ student }) {
 
   return (
     <div className="card report-card" style={{ marginBottom: 20 }}>
-      <div className="section-title">
+      <div className="section-title" style={{ alignItems: 'center' }}>
         <span className="dot" style={{ background: 'var(--brand-accent)' }}></span>
         💬 멘토 메시지
         <small>· 관리자/멘토와의 양방향 피드백</small>
+        {comments.length > 0 && (
+          <button className="btn btn-ghost btn-sm"
+            style={{ marginLeft: 'auto', fontSize: 11, padding: '4px 10px' }}
+            onClick={() => {
+              const next = !compactMode;
+              setCompactMode(next);
+              const all = {};
+              comments.forEach(c => { all[c.id] = next; });
+              setCollapsed(all);
+            }}
+            title={compactMode ? '모든 메시지 펼치기' : '모든 메시지 접기'}>
+            {compactMode ? '⤵ 모두 펼치기' : '⤴ 모두 접기'}
+          </button>
+        )}
       </div>
 
       {comments.length === 0 && (
@@ -530,28 +548,50 @@ function AdminFeedbackCard({ student }) {
         </div>
       )}
 
-      <div className="comment-list" style={{ maxHeight: 320, overflowY: 'auto' }}>
-        {comments.map(c => (
-          <div key={c.id} className="comment" style={{
-            background: c.author_role === 'student' ? 'var(--brand-primary-soft)' : 'var(--surface-2)',
-            borderColor: c.author_role === 'student'
-              ? 'color-mix(in oklab, var(--brand-primary) 25%, var(--line))'
-              : 'var(--line-soft)'
-          }}>
-            <div className="comment-meta">
-              <span className="comment-author">
-                {c.author_role === 'student' ? `${c.author} (나)` : `🎓 ${c.author}`}
-              </span>
-              {' · '}
-              {new Date(c.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-              {/* 내가(학생) 보낸 메시지를 멘토가 읽었는지 */}
-              {c.author_role === 'student' && (
-                <ReadReceipt read={isCommentReadByCounterparty(c, readState)} />
+      <div className="comment-list" style={{ maxHeight: compactMode ? 'none' : 480, overflowY: 'auto' }}>
+        {comments.map(c => {
+          const isCollapsed = !!collapsed[c.id];
+          const preview = (c.text || '').replace(/[#*`>\-]/g, '').replace(/\n+/g, ' ').trim().slice(0, 80);
+          const isLong = (c.text || '').length > 80 || (c.text || '').includes('\n');
+          return (
+            <div key={c.id} className={`comment ${isCollapsed ? 'collapsed' : ''}`} style={{
+              background: c.author_role === 'student' ? 'var(--brand-primary-soft)' : 'var(--surface-2)',
+              borderColor: c.author_role === 'student'
+                ? 'color-mix(in oklab, var(--brand-primary) 25%, var(--line))'
+                : 'var(--line-soft)'
+            }}>
+              <div className="comment-meta" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span className="comment-author">
+                  {c.author_role === 'student' ? `${c.author} (나)` : `🎓 ${c.author}`}
+                </span>
+                <span>·</span>
+                <span>{new Date(c.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                {/* 내가(학생) 보낸 메시지를 멘토가 읽었는지 */}
+                {c.author_role === 'student' && (
+                  <ReadReceipt read={isCommentReadByCounterparty(c, readState)} />
+                )}
+                {isLong && (
+                  <button className="btn btn-ghost btn-sm"
+                    style={{ marginLeft: 'auto', fontSize: 10, padding: '2px 8px' }}
+                    onClick={() => toggleCollapsed(c.id)}
+                    title={isCollapsed ? '펼쳐 보기' : '접기'}>
+                    {isCollapsed ? '▶ 펼치기' : '▼ 접기'}
+                  </button>
+                )}
+              </div>
+              {isCollapsed ? (
+                <div className="comment-preview" style={{
+                  marginTop: 6, fontSize: 13, color: 'var(--ink-soft)',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                }}>
+                  {preview}{(c.text || '').length > 80 ? '…' : ''}
+                </div>
+              ) : (
+                <MarkdownView text={c.text} />
               )}
             </div>
-            <MarkdownView text={c.text} />
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {!showReply ? (
@@ -719,3 +759,234 @@ function SelfPasswordCard({ student }) {
 }
 
 window.SelfPasswordCard = SelfPasswordCard;
+
+/* ==========================================================================
+   📅 StudentMentoringTab — 학생 멘토링 이력 + 사후 기록 작성
+   ========================================================================== */
+function StudentMentoringTab({ student }) {
+  const [_, force] = useState(0);
+  const [editingId, setEditingId] = useState(null);
+  const [draftNotes, setDraftNotes] = useState('');
+  const [savedFlash, setSavedFlash] = useState(null);
+
+  useEffect(() => {
+    const unsub = window.STORE.onChange(() => force(v => v + 1));
+    return unsub;
+  }, []);
+
+  const sessions = useMemo(
+    () => window.STORE.listMentoring({ studentId: student.id }),
+    [student.id, _]
+  );
+
+  const now = new Date().toISOString();
+  const upcoming = sessions.filter(s => s.status === 'scheduled' && s.scheduled_at >= now);
+  const completed = sessions.filter(s => s.status === 'completed');
+  const other = sessions.filter(s => !upcoming.includes(s) && !completed.includes(s));
+  const pendingNotes = completed.filter(s => !s.student_notes).length;
+
+  function startEdit(s) {
+    setEditingId(s.id);
+    setDraftNotes(s.student_notes || '');
+  }
+  async function saveNotes(id) {
+    try {
+      const r = window.STORE.updateMentoringStudentNotes(id, draftNotes);
+      if (r && typeof r.then === 'function') await r;
+      setEditingId(null);
+      setDraftNotes('');
+      setSavedFlash(id);
+      setTimeout(() => setSavedFlash(null), 1800);
+    } catch (e) {
+      alert('저장 실패: ' + e.message);
+    }
+  }
+
+  return (
+    <div className="float-in">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <h2 className="h2" style={{ margin: 0 }}>📅 멘토링 이력</h2>
+          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+            {sessions.length}건 · 완료 {completed.length} · 예정 {upcoming.length}
+            {pendingNotes > 0 && (
+              <span style={{ marginLeft: 8, color: 'var(--alert-warn)', fontWeight: 700 }}>
+                · 사후 기록 미작성 {pendingNotes}건
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {sessions.length === 0 && (
+        <div className="empty">
+          <div className="big">📅</div>
+          <div>아직 등록된 멘토링이 없습니다.</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+            관리자가 일정을 등록하면 이곳에 표시됩니다.
+          </div>
+        </div>
+      )}
+
+      {upcoming.length > 0 && (
+        <section style={{ marginBottom: 24 }}>
+          <div className="section-title">
+            <span className="dot" style={{ background: 'var(--brand-accent)' }}></span>
+            🗓 예정된 멘토링
+            <small>· {upcoming.length}건</small>
+          </div>
+          {upcoming.map(s => (
+            <StudentMentoringRow key={s.id} session={s}
+              mode="upcoming"
+              editingId={editingId}
+              draftNotes={draftNotes}
+              setDraftNotes={setDraftNotes}
+              savedFlash={savedFlash}
+              onStartEdit={startEdit}
+              onCancelEdit={() => { setEditingId(null); setDraftNotes(''); }}
+              onSaveNotes={saveNotes} />
+          ))}
+        </section>
+      )}
+
+      {completed.length > 0 && (
+        <section style={{ marginBottom: 24 }}>
+          <div className="section-title">
+            <span className="dot" style={{ background: 'var(--alert-fresh)' }}></span>
+            ✅ 완료된 멘토링
+            <small>· {completed.length}건 · 사후 기록 작성 가능</small>
+          </div>
+          {completed.map(s => (
+            <StudentMentoringRow key={s.id} session={s}
+              mode="completed"
+              editingId={editingId}
+              draftNotes={draftNotes}
+              setDraftNotes={setDraftNotes}
+              savedFlash={savedFlash}
+              onStartEdit={startEdit}
+              onCancelEdit={() => { setEditingId(null); setDraftNotes(''); }}
+              onSaveNotes={saveNotes} />
+          ))}
+        </section>
+      )}
+
+      {other.length > 0 && (
+        <section style={{ marginBottom: 24 }}>
+          <div className="section-title">
+            <span className="dot" style={{ background: 'var(--ink-mute)' }}></span>
+            기타 (취소/불참 등)
+            <small>· {other.length}건</small>
+          </div>
+          {other.map(s => (
+            <StudentMentoringRow key={s.id} session={s}
+              mode="other"
+              editingId={editingId}
+              draftNotes={draftNotes}
+              setDraftNotes={setDraftNotes}
+              savedFlash={savedFlash}
+              onStartEdit={startEdit}
+              onCancelEdit={() => { setEditingId(null); setDraftNotes(''); }}
+              onSaveNotes={saveNotes} />
+          ))}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function StudentMentoringRow({ session: s, mode, editingId, draftNotes, setDraftNotes, savedFlash, onStartEdit, onCancelEdit, onSaveNotes }) {
+  const dt = s.scheduled_at || '';
+  const date = dt.slice(0, 10);
+  const time = dt.slice(11, 16);
+  const isEditing = editingId === s.id;
+  const hasNotes = !!s.student_notes;
+  const needsNotes = mode === 'completed' && !hasNotes;
+  const statusLabel = {
+    scheduled: '예정', completed: '완료', cancelled: '취소', no_show: '불참'
+  }[s.status] || s.status;
+
+  return (
+    <div className={`student-mentoring-card status-${s.status} ${needsNotes ? 'needs-notes' : ''} ${hasNotes ? 'has-notes' : ''}`}>
+      <div className="smc-head">
+        <div className="smc-when">
+          <div className="smc-date">{date}</div>
+          <div className="smc-time">⏰ {time} · {s.duration_min}분</div>
+        </div>
+        <div className="smc-info">
+          <div className="smc-title">
+            {s.topic || '(주제 미정)'}
+            <span className={`pill status-pill-${s.status}`} style={{ marginLeft: 8 }}>{statusLabel}</span>
+            {needsNotes && (
+              <span className="pill" style={{ background: 'var(--alert-warn-bg)', color: 'var(--alert-warn)', marginLeft: 6 }}>
+                ⚠ 기록 필요
+              </span>
+            )}
+            {hasNotes && (
+              <span className="pill" style={{ background: 'var(--alert-fresh-bg)', color: 'var(--alert-fresh)', marginLeft: 6 }}>
+                ✓ 기록 완료
+              </span>
+            )}
+            {savedFlash === s.id && (
+              <span className="pill" style={{ background: 'var(--alert-fresh-bg)', color: 'var(--alert-fresh)', marginLeft: 6 }}>
+                💾 저장됨
+              </span>
+            )}
+          </div>
+          <div className="smc-meta">
+            {s.mentor && <span>🎓 {s.mentor}</span>}
+            {s.location && <span>📍 {s.location}</span>}
+          </div>
+        </div>
+      </div>
+
+      {s.admin_notes && (
+        <details className="smc-block" open>
+          <summary>📌 멘토 의제</summary>
+          <MarkdownView text={s.admin_notes} />
+        </details>
+      )}
+
+      <div className="smc-block smc-notes-block">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>
+            🧑‍🎓 내 사후 기록
+            {hasNotes && s.student_notes_updated_at && (
+              <span className="muted" style={{ fontSize: 11, fontWeight: 400, marginLeft: 6 }}>
+                · 작성: {new Date(s.student_notes_updated_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </div>
+          {!isEditing && (
+            <button className="btn btn-secondary btn-sm" onClick={() => onStartEdit(s)}>
+              <Icon.Edit /> {hasNotes ? '수정' : '작성'}
+            </button>
+          )}
+        </div>
+        {isEditing ? (
+          <>
+            <MarkdownEditor value={draftNotes} onChange={setDraftNotes}
+              placeholder="멘토링에서 다룬 내용, 배운 점, 다음 액션 아이템을 정리해 보세요…"
+              rows={4} minimal />
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={onCancelEdit}>취소</button>
+              <button className="btn btn-primary btn-sm" onClick={() => onSaveNotes(s.id)} style={{ flex: 1 }}>
+                💾 저장
+              </button>
+            </div>
+          </>
+        ) : hasNotes ? (
+          <div className="smc-notes-view">
+            <MarkdownView text={s.student_notes} />
+          </div>
+        ) : (
+          <div className="smc-notes-empty muted">
+            {mode === 'completed' ? '아직 사후 기록을 작성하지 않았어요. 멘토링 내용을 정리해 보세요.' : '아직 사후 기록이 없습니다.'}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+window.StudentMentoringTab = StudentMentoringTab;
+window.StudentMentoringRow = StudentMentoringRow;

@@ -267,11 +267,40 @@ function ReadReceipt({ read }) {
   );
 }
 
+/* 생년월일 → 나이 자동 계산 (한국식 만나이)
+   - 지원 포맷: 'YYYY-MM-DD', 'YYYY/MM/DD', 'YYYY.MM.DD', 'YYYYMMDD', Date 객체
+   - 잘못된 입력 → null */
+function calcAgeFromBirthDate(input) {
+  if (!input) return null;
+  let dt;
+  if (input instanceof Date) {
+    dt = input;
+  } else {
+    const s = String(input).trim();
+    if (!s) return null;
+    const m = s.match(/^(\d{4})[\-\/\.]?(\d{1,2})[\-\/\.]?(\d{1,2})$/);
+    if (!m) return null;
+    const y = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10);
+    const d = parseInt(m[3], 10);
+    if (y < 1900 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    dt = new Date(y, mo - 1, d);
+    if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+  }
+  const now = new Date();
+  let age = now.getFullYear() - dt.getFullYear();
+  const m2 = now.getMonth() - dt.getMonth();
+  if (m2 < 0 || (m2 === 0 && now.getDate() < dt.getDate())) age--;
+  if (age < 0 || age > 150) return null;
+  return age;
+}
+
 Object.assign(window, {
   Avatar, Icon, MarkdownEditor, MarkdownView,
   StatusPicker, StatusPill, MoodPicker,
   ElapsedBadge, elapsedTier, Drawer, ProgressBar,
   ReadReceipt, isCommentReadByCounterparty, safeHref,
   STATUS_OPTIONS, MOODS, MOOD_SCALE,
-  normalizeMoodLevel, moodIcon, getMoodEntry
+  normalizeMoodLevel, moodIcon, getMoodEntry,
+  calcAgeFromBirthDate
 });

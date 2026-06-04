@@ -183,10 +183,6 @@ function ManageStudentRow({ student, editing, onEdit, onSave, onDelete }) {
           </select>
         </div>
         <div>
-          <div className="field-label">나이</div>
-          <input type="number" className="input" value={draft.age || ''} onChange={e => setDraft({ ...draft, age: parseInt(e.target.value) || null })} />
-        </div>
-        <div>
           <div className="field-label">성별</div>
           <select className="select" value={draft.gender} onChange={e => setDraft({ ...draft, gender: e.target.value })}>
             <option value="M">남</option>
@@ -194,6 +190,21 @@ function ManageStudentRow({ student, editing, onEdit, onSave, onDelete }) {
           </select>
         </div>
         <div>
+          <div className="field-label">생년월일 <span style={{ fontWeight: 400, color: 'var(--ink-mute)' }}>· 입력 시 나이 자동</span></div>
+          <input type="date" className="input" value={(draft.birthDate || '').slice(0, 10)}
+            onChange={e => {
+              const bd = e.target.value;
+              const age = window.calcAgeFromBirthDate(bd);
+              setDraft({ ...draft, birthDate: bd, age: age !== null ? age : draft.age });
+            }} />
+        </div>
+        <div>
+          <div className="field-label">나이 <span style={{ fontWeight: 400, color: 'var(--ink-mute)' }}>· 자동/수동</span></div>
+          <input type="number" className="input" value={draft.age || ''}
+            onChange={e => setDraft({ ...draft, age: parseInt(e.target.value) || null })}
+            placeholder="자동 계산됨" />
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}>
           <div className="field-label">전화번호</div>
           <input className="input" value={draft.phone || ''} onChange={e => setDraft({ ...draft, phone: e.target.value })} />
         </div>
@@ -226,10 +237,14 @@ function ManageStudentRow({ student, editing, onEdit, onSave, onDelete }) {
 function AddStudentModal({ defaultCohort, onAdd, onClose }) {
   const [form, setForm] = useState({
     cohort: defaultCohort,
-    name: '', age: '', gender: 'M', phone: '', email: '',
+    name: '', birthDate: '', age: '', gender: 'M', phone: '', email: '',
     addr1: '', addr2: '', education: ''
   });
   function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
+  function onBirthDateChange(v) {
+    const age = window.calcAgeFromBirthDate(v);
+    setForm(f => ({ ...f, birthDate: v, age: age !== null ? age : f.age }));
+  }
   function submit() {
     if (!form.name.trim()) { alert('이름은 필수입니다'); return; }
     onAdd({ ...form, age: parseInt(form.age) || null });
@@ -257,8 +272,15 @@ function AddStudentModal({ defaultCohort, onAdd, onClose }) {
             <input className="input" autoFocus value={form.name} onChange={e => update('name', e.target.value)} placeholder="이름" />
           </div>
           <div>
-            <div className="field-label">나이</div>
-            <input type="number" className="input" value={form.age} onChange={e => update('age', e.target.value)} />
+            <div className="field-label">생년월일 <span style={{ fontWeight: 400, color: 'var(--ink-mute)' }}>· 나이 자동</span></div>
+            <input type="date" className="input" value={form.birthDate}
+              onChange={e => onBirthDateChange(e.target.value)} />
+          </div>
+          <div>
+            <div className="field-label">나이 <span style={{ fontWeight: 400, color: 'var(--ink-mute)' }}>· 자동/수동</span></div>
+            <input type="number" className="input" value={form.age}
+              onChange={e => update('age', e.target.value)}
+              placeholder="자동" />
           </div>
           <div>
             <div className="field-label">성별</div>

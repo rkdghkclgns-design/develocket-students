@@ -2326,3 +2326,199 @@ input, textarea, select { font-family: inherit; }
 @media (max-width: 720px) {
   .cohort-menu { min-width: 200px; right: 0; }
 }
+
+/* ==========================================================================
+   📅 멘토링 캘린더 (관리자) + 학생 멘토링 카드
+   ========================================================================== */
+.mentoring-panel { padding: 4px 0; }
+
+.mentoring-month-nav {
+  display: flex; align-items: center; gap: 8px;
+  margin: 12px 0;
+}
+.mentoring-cal {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  background: var(--surface-2);
+  padding: 6px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+}
+.mentoring-cal-dow {
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  padding: 8px 0;
+  color: var(--ink-mute);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mentoring-cal-dow:nth-child(1) { color: #DC2626; }   /* 일요일 */
+.mentoring-cal-dow:nth-child(7) { color: #2563EB; }   /* 토요일 */
+
+.mentoring-cal-cell {
+  min-height: 92px;
+  background: var(--surface);
+  border-radius: var(--r-sm);
+  padding: 6px 6px 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), box-shadow 0.12s var(--ease);
+  display: flex; flex-direction: column; gap: 2px;
+  overflow: hidden;
+}
+.mentoring-cal-cell.empty {
+  background: transparent;
+  cursor: default;
+}
+.mentoring-cal-cell:not(.empty):hover {
+  background: var(--brand-primary-soft);
+}
+.mentoring-cal-cell.selected {
+  background: var(--brand-primary-soft);
+  box-shadow: 0 0 0 2px var(--brand-primary);
+}
+.mentoring-cal-cell.today .mentoring-cal-day {
+  background: var(--brand-primary);
+  color: white;
+  border-radius: 999px;
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  font-weight: 800;
+}
+.mentoring-cal-cell.sun .mentoring-cal-day { color: #DC2626; }
+.mentoring-cal-cell.sat .mentoring-cal-day { color: #2563EB; }
+.mentoring-cal-day {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.mentoring-cal-pill {
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  display: flex; gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: 3px solid var(--brand-primary);
+}
+.mentoring-cal-pill.status-scheduled { border-left-color: var(--brand-primary); background: color-mix(in oklab, var(--brand-primary) 12%, var(--surface)); }
+.mentoring-cal-pill.status-completed { border-left-color: var(--alert-fresh); background: color-mix(in oklab, var(--alert-fresh) 12%, var(--surface)); }
+.mentoring-cal-pill.status-cancelled { border-left-color: var(--ink-mute); background: var(--surface-2); opacity: 0.6; }
+.mentoring-cal-pill.status-no_show { border-left-color: var(--alert-danger); background: color-mix(in oklab, var(--alert-danger) 12%, var(--surface)); }
+.mentoring-cal-pill .mt-time { font-weight: 700; flex-shrink: 0; }
+.mentoring-cal-pill .mt-name { overflow: hidden; text-overflow: ellipsis; }
+.mentoring-cal-more {
+  font-size: 10px;
+  color: var(--ink-mute);
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.mentoring-day-detail {
+  margin-top: 18px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.mentoring-day-list,
+.mentoring-list-view .mentoring-day-list {
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.mentoring-row {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border-left: 4px solid var(--brand-primary);
+}
+.mentoring-row.status-completed { border-left-color: var(--alert-fresh); }
+.mentoring-row.status-cancelled { border-left-color: var(--ink-mute); opacity: 0.7; }
+.mentoring-row.status-no_show { border-left-color: var(--alert-danger); }
+
+.mentoring-row-time .mr-date { font-size: 11px; font-weight: 700; color: var(--ink-mute); }
+.mentoring-row-time .mr-clock { font-size: 14px; font-weight: 800; }
+.mentoring-row-time .mr-dur { font-size: 11px; color: var(--ink-soft); }
+
+.mentoring-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.mentoring-row-topic { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.mentoring-row-notes { margin-top: 6px; font-size: 12px; }
+.mentoring-row-notes summary { cursor: pointer; color: var(--ink-soft); font-weight: 600; padding: 4px 0; }
+
+.mentoring-row-actions {
+  display: flex; flex-direction: column; gap: 4px; align-items: stretch;
+  min-width: 90px;
+}
+
+.status-pill-scheduled { background: var(--brand-primary-soft); color: var(--brand-primary-deep); font-size: 10px; }
+.status-pill-completed { background: var(--alert-fresh-bg); color: var(--alert-fresh); font-size: 10px; }
+.status-pill-cancelled { background: var(--bg-2); color: var(--ink-mute); font-size: 10px; }
+.status-pill-no_show { background: var(--alert-danger-bg); color: var(--alert-danger); font-size: 10px; }
+
+/* ---- 학생 멘토링 카드 ---- */
+.student-mentoring-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border-left: 4px solid var(--brand-primary);
+  margin-bottom: 12px;
+}
+.student-mentoring-card.status-completed { border-left-color: var(--alert-fresh); }
+.student-mentoring-card.status-cancelled { border-left-color: var(--ink-mute); opacity: 0.7; }
+.student-mentoring-card.status-no_show { border-left-color: var(--alert-danger); }
+.student-mentoring-card.needs-notes {
+  background: linear-gradient(135deg, color-mix(in oklab, var(--alert-warn) 6%, var(--surface)) 0%, var(--surface) 100%);
+  border-color: color-mix(in oklab, var(--alert-warn) 30%, var(--line));
+}
+.student-mentoring-card.has-notes .smc-notes-block { background: color-mix(in oklab, var(--alert-fresh) 6%, var(--surface)); }
+
+.smc-head { display: grid; grid-template-columns: 110px 1fr; gap: 14px; margin-bottom: 8px; }
+.smc-when { border-right: 1px solid var(--line-soft); padding-right: 14px; }
+.smc-when .smc-date { font-size: 12px; font-weight: 700; color: var(--ink); }
+.smc-when .smc-time { font-size: 13px; font-weight: 800; color: var(--brand-primary-deep); margin-top: 2px; }
+.smc-info .smc-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.smc-info .smc-meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
+
+.smc-block {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+}
+.smc-block summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+.smc-notes-block { background: color-mix(in oklab, var(--brand-primary) 4%, var(--surface)); }
+.smc-notes-empty { font-style: italic; padding: 8px 0; }
+
+@media (max-width: 720px) {
+  .mentoring-cal-cell { min-height: 64px; padding: 4px; }
+  .mentoring-cal-day { font-size: 11px; }
+  .mentoring-cal-pill { font-size: 9px; padding: 1px 3px; }
+  .mentoring-row { grid-template-columns: 1fr; gap: 8px; }
+  .mentoring-row-actions { flex-direction: row; min-width: auto; }
+  .smc-head { grid-template-columns: 1fr; }
+  .smc-when { border-right: none; padding-right: 0; border-bottom: 1px solid var(--line-soft); padding-bottom: 6px; }
+}
+
+/* ==========================================================================
+   💬 멘토 메시지 접기/펼치기 (학생 뷰)
+   ========================================================================== */
+.comment.collapsed {
+  padding: 8px 12px;
+}
+.comment.collapsed .comment-preview {
+  font-style: italic;
+}
+.comment .btn.btn-ghost.btn-sm {
+  white-space: nowrap;
+}

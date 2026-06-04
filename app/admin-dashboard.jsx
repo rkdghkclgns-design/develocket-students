@@ -194,6 +194,7 @@ function AdminDashboard({ cohortId, dangerThreshold, layout, onLogout, onSwitchC
             <button className={view === 'students' ? 'active' : ''} onClick={() => setView('students')}>👥 수강생</button>
             <button className={view === 'study-room' ? 'active' : ''} onClick={() => setView('study-room')}>📚 자습실</button>
             <button className={view === 'lectures' ? 'active' : ''} onClick={() => setView('lectures')}>🎤 특강</button>
+            <button className={view === 'mentoring' ? 'active' : ''} onClick={() => setView('mentoring')}>📅 멘토링</button>
           </div>
           <AdminManageButton
             cohortId={cohortId}
@@ -250,6 +251,9 @@ function AdminDashboard({ cohortId, dangerThreshold, layout, onLogout, onSwitchC
       )}
       {view === 'lectures' && (
         <AttendancePanel cohortId={cohortId} type="lectures" kind="lecture" />
+      )}
+      {view === 'mentoring' && (
+        <AdminMentoringPanel cohortId={cohortId} />
       )}
 
       {view === 'students' && <></>}
