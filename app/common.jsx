@@ -295,6 +295,77 @@ function calcAgeFromBirthDate(input) {
   return age;
 }
 
+/* 간단한 토스트 시스템 — 모달 위에서도 안전, alert() 대체용
+   사용: window.showToast('저장됨', 'success' | 'error' | 'info', 2400);
+   role=status / aria-live=polite (스크린리더 자동 안내) */
+function showToast(message, kind = 'info', durationMs = 2400) {
+  if (typeof document === 'undefined') return;
+  let host = document.getElementById('toast-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toast-host';
+    host.setAttribute('aria-live', 'polite');
+    host.setAttribute('aria-atomic', 'false');
+    host.style.cssText = 'position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:2147483647;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none';
+    document.body.appendChild(host);
+  }
+  const el = document.createElement('div');
+  el.setAttribute('role', 'status');
+  const palette = {
+    success: { bg: '#16A34A', fg: '#fff', icon: '✅' },
+    error:   { bg: '#DC2626', fg: '#fff', icon: '⚠️' },
+    info:    { bg: '#1E293B', fg: '#fff', icon: 'ℹ️' }
+  }[kind] || { bg: '#1E293B', fg: '#fff', icon: 'ℹ️' };
+  el.style.cssText =
+    `background:${palette.bg};color:${palette.fg};padding:10px 16px;border-radius:10px;` +
+    'box-shadow:0 8px 24px rgba(0,0,0,0.25);font-size:14px;font-weight:600;' +
+    'max-width:min(420px,calc(100vw - 32px));pointer-events:auto;' +
+    'animation:fadein 0.18s ease both';
+  el.textContent = `${palette.icon}  ${message}`;
+  host.appendChild(el);
+  setTimeout(() => {
+    el.style.transition = 'opacity 0.25s';
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 260);
+  }, durationMs);
+}
+
+/* 모달 접근성 헬퍼 — ESC 닫기 + focus trap + body scroll lock
+   사용: const boxRef = useRef(null); useModalA11y(boxRef, onClose); */
+function useModalA11y(boxRef, onClose) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose && onClose(); return; }
+      if (e.key !== 'Tab' || !boxRef.current) return;
+      // focus trap
+      const focusables = boxRef.current.querySelectorAll(
+        'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    // 첫 포커서블 요소에 자동 포커스
+    setTimeout(() => {
+      if (!boxRef.current) return;
+      const first = boxRef.current.querySelector(
+        'input:not([disabled]):not([type="hidden"]),textarea:not([disabled]),select:not([disabled]),button:not([disabled])'
+      );
+      first && first.focus();
+    }, 0);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+}
+
 Object.assign(window, {
   Avatar, Icon, MarkdownEditor, MarkdownView,
   StatusPicker, StatusPill, MoodPicker,
@@ -302,5 +373,6 @@ Object.assign(window, {
   ReadReceipt, isCommentReadByCounterparty, safeHref,
   STATUS_OPTIONS, MOODS, MOOD_SCALE,
   normalizeMoodLevel, moodIcon, getMoodEntry,
-  calcAgeFromBirthDate
+  calcAgeFromBirthDate,
+  showToast, useModalA11y
 });

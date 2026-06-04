@@ -95,7 +95,7 @@ function DailyReportTab({ student }) {
   function saveDrive() {
     const v = driveDraft.trim();
     if (v && !/^https?:\/\//i.test(v)) {
-      alert('http:// 또는 https:// 로 시작하는 URL을 입력하세요');
+      window.showToast('http:// 또는 https:// 로 시작하는 URL을 입력하세요', 'error');
       return;
     }
     window.STORE.updateStudentFields(student.id, { drive_link: v });
@@ -535,6 +535,8 @@ function AdminFeedbackCard({ student }) {
               comments.forEach(c => { all[c.id] = next; });
               setCollapsed(all);
             }}
+            aria-expanded={!compactMode}
+            aria-label={compactMode ? '모든 메시지 펼치기' : '모든 메시지 접기'}
             title={compactMode ? '모든 메시지 펼치기' : '모든 메시지 접기'}>
             {compactMode ? '⤵ 모두 펼치기' : '⤴ 모두 접기'}
           </button>
@@ -574,6 +576,8 @@ function AdminFeedbackCard({ student }) {
                   <button className="btn btn-ghost btn-sm"
                     style={{ marginLeft: 'auto', fontSize: 10, padding: '2px 8px' }}
                     onClick={() => toggleCollapsed(c.id)}
+                    aria-expanded={!isCollapsed}
+                    aria-label={isCollapsed ? '메시지 펼쳐 보기' : '메시지 접기'}
                     title={isCollapsed ? '펼쳐 보기' : '접기'}>
                     {isCollapsed ? '▶ 펼치기' : '▼ 접기'}
                   </button>
@@ -798,7 +802,7 @@ function StudentMentoringTab({ student }) {
       setSavedFlash(id);
       setTimeout(() => setSavedFlash(null), 1800);
     } catch (e) {
-      alert('저장 실패: ' + e.message);
+      window.showToast('저장 실패: ' + e.message, 'error');
     }
   }
 

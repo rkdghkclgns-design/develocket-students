@@ -132,6 +132,7 @@ function AdminManageDrawer({ cohortId, kpiTarget, onChangeKpi, onClose, onChange
 /* ----------- ManageStudentRow ----------- */
 function ManageStudentRow({ student, editing, onEdit, onSave, onDelete }) {
   const [draft, setDraft] = useState(student);
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
   useEffect(() => { setDraft(student); }, [student.id, editing]);
 
   function save() {
@@ -192,6 +193,7 @@ function ManageStudentRow({ student, editing, onEdit, onSave, onDelete }) {
         <div>
           <div className="field-label">생년월일 <span style={{ fontWeight: 400, color: 'var(--ink-mute)' }}>· 입력 시 나이 자동</span></div>
           <input type="date" className="input" value={(draft.birthDate || '').slice(0, 10)}
+            min="1950-01-01" max={todayIso}
             onChange={e => {
               const bd = e.target.value;
               const age = window.calcAgeFromBirthDate(bd);
@@ -235,6 +237,11 @@ function ManageStudentRow({ student, editing, onEdit, onSave, onDelete }) {
 
 /* ----------- AddStudentModal ----------- */
 function AddStudentModal({ defaultCohort, onAdd, onClose }) {
+  const boxRef = useRef(null);
+  const titleId = useMemo(() => 'add-student-title-' + Math.random().toString(36).slice(2, 8), []);
+  window.useModalA11y(boxRef, onClose);
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
   const [form, setForm] = useState({
     cohort: defaultCohort,
     name: '', birthDate: '', age: '', gender: 'M', phone: '', email: '',
@@ -246,19 +253,20 @@ function AddStudentModal({ defaultCohort, onAdd, onClose }) {
     setForm(f => ({ ...f, birthDate: v, age: age !== null ? age : f.age }));
   }
   function submit() {
-    if (!form.name.trim()) { alert('이름은 필수입니다'); return; }
+    if (!form.name.trim()) { window.showToast('이름은 필수입니다', 'error'); return; }
     onAdd({ ...form, age: parseInt(form.age) || null });
   }
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={{ maxWidth: 560 }}>
+      <div className="modal" style={{ maxWidth: 560 }}
+        role="dialog" aria-modal="true" aria-labelledby={titleId} ref={boxRef}>
         <div className="drawer-head">
           <div>
-            <div className="h2" style={{ margin: 0 }}>👤 수강생 추가</div>
+            <div className="h2" id={titleId} style={{ margin: 0 }}>👤 수강생 추가</div>
             <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>새 수강생을 등록합니다</div>
           </div>
-          <button className="drawer-close" onClick={onClose}><Icon.X /></button>
+          <button className="drawer-close" onClick={onClose} aria-label="닫기"><Icon.X /></button>
         </div>
         <div className="drawer-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div style={{ gridColumn: '1 / -1' }}>
@@ -274,6 +282,7 @@ function AddStudentModal({ defaultCohort, onAdd, onClose }) {
           <div>
             <div className="field-label">생년월일 <span style={{ fontWeight: 400, color: 'var(--ink-mute)' }}>· 나이 자동</span></div>
             <input type="date" className="input" value={form.birthDate}
+              min="1950-01-01" max={todayIso}
               onChange={e => onBirthDateChange(e.target.value)} />
           </div>
           <div>

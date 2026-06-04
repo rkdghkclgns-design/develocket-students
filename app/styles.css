@@ -2354,8 +2354,25 @@ input, textarea, select { font-family: inherit; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.mentoring-cal-dow:nth-child(1) { color: #DC2626; }   /* 일요일 */
-.mentoring-cal-dow:nth-child(7) { color: #2563EB; }   /* 토요일 */
+/* 일/토 요일 헤더 — 색약 사용자를 위해 색상 + 배경 + 굵기/밑줄까지 다중 신호 적용 */
+.mentoring-cal-dow:nth-child(1) {
+  color: #DC2626;
+  background: color-mix(in oklab, #DC2626 10%, transparent);
+  border-radius: 4px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.mentoring-cal-dow:nth-child(7) {
+  color: #2563EB;
+  background: color-mix(in oklab, #2563EB 10%, transparent);
+  border-radius: 4px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 
 .mentoring-cal-cell {
   min-height: 92px;
@@ -2387,8 +2404,25 @@ input, textarea, select { font-family: inherit; }
   display: grid; place-items: center;
   font-weight: 800;
 }
-.mentoring-cal-cell.sun .mentoring-cal-day { color: #DC2626; }
-.mentoring-cal-cell.sat .mentoring-cal-day { color: #2563EB; }
+/* 일/토 셀 — 색상 + 굵은 폰트 + 좌측 막대(•) + inset border로 다중 식별 신호 */
+.mentoring-cal-cell.sun .mentoring-cal-day { color: #DC2626; font-weight: 800; }
+.mentoring-cal-cell.sat .mentoring-cal-day { color: #2563EB; font-weight: 800; }
+.mentoring-cal-cell.sun .mentoring-cal-day::before,
+.mentoring-cal-cell.sat .mentoring-cal-day::before {
+  content: '•';
+  margin-right: 3px;
+}
+.mentoring-cal-cell.sun { box-shadow: inset 3px 0 0 #DC2626; }
+.mentoring-cal-cell.sat { box-shadow: inset 3px 0 0 #2563EB; }
+.mentoring-cal-cell.sun.selected { box-shadow: inset 3px 0 0 #DC2626, 0 0 0 2px var(--brand-primary); }
+.mentoring-cal-cell.sat.selected { box-shadow: inset 3px 0 0 #2563EB, 0 0 0 2px var(--brand-primary); }
+/* 키보드 포커스 가시화 */
+.mentoring-cal-cell:focus-visible {
+  outline: 3px solid var(--brand-primary);
+  outline-offset: 2px;
+  position: relative;
+  z-index: 1;
+}
 .mentoring-cal-day {
   font-size: 12px;
   font-weight: 700;

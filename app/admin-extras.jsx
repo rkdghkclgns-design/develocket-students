@@ -447,10 +447,12 @@ function AdminMentoringPanel({ cohortId }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="layout-switch">
+          <div className="layout-switch" role="tablist" aria-label="멘토링 보기 모드">
             <button className={viewMode === 'calendar' ? 'active' : ''}
+              role="tab" aria-selected={viewMode === 'calendar'}
               onClick={() => setViewMode('calendar')}>🗓 캘린더</button>
             <button className={viewMode === 'list' ? 'active' : ''}
+              role="tab" aria-selected={viewMode === 'list'}
               onClick={() => setViewMode('list')}>📋 리스트</button>
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => {
@@ -484,23 +486,31 @@ function AdminMentoringPanel({ cohortId }) {
               const list = sessionsByDate[dateStr] || [];
               const isToday = dateStr === today;
               const isSelected = dateStr === selectedDate;
+              const dowLabel = ['일','월','화','수','목','금','토'][dayOfWeek];
               return (
                 <div key={i}
                   className={`mentoring-cal-cell ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''} ${dayOfWeek === 0 ? 'sun' : ''} ${dayOfWeek === 6 ? 'sat' : ''}`}
-                  onClick={() => setSelectedDate(dateStr)}>
+                  role="button" tabIndex={0}
+                  aria-label={`${dateStr} ${dowLabel}요일${isToday ? ' (오늘)' : ''} · 멘토링 ${list.length}건`}
+                  aria-pressed={isSelected}
+                  onClick={() => setSelectedDate(dateStr)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedDate(dateStr); } }}>
                   <div className="mentoring-cal-day">{day}</div>
                   {list.slice(0, 3).map(s => {
                     const st = studentMap[s.student_id];
+                    const time = (s.scheduled_at || '').slice(11, 16);
+                    const label = `${time} ${st?.name || s.student_id} ${s.topic || ''}`;
                     return (
                       <div key={s.id} className={`mentoring-cal-pill status-${s.status}`}
-                        title={`${(s.scheduled_at || '').slice(11, 16)} · ${st?.name || s.student_id} · ${s.topic || ''}`}>
-                        <span className="mt-time">{(s.scheduled_at || '').slice(11, 16)}</span>
+                        role="listitem" aria-label={label}
+                        title={`${time} · ${st?.name || s.student_id} · ${s.topic || ''}`}>
+                        <span className="mt-time">{time}</span>
                         <span className="mt-name">{st?.name || '?'}</span>
                       </div>
                     );
                   })}
                   {list.length > 3 && (
-                    <div className="mentoring-cal-more">+{list.length - 3}건</div>
+                    <div className="mentoring-cal-more" aria-label={`외 ${list.length - 3}건 더 있음`}>+{list.length - 3}건</div>
                   )}
                 </div>
               );
@@ -524,13 +534,13 @@ function AdminMentoringPanel({ cohortId }) {
                       try {
                         const r = window.STORE.deleteMentoring(s.id);
                         if (r && typeof r.then === 'function') await r;
-                      } catch (e) { alert('삭제 실패: ' + e.message); }
+                      } catch (e) { window.showToast('삭제 실패: ' + e.message, 'error'); }
                     }}
                     onStatusChange={async (newStatus) => {
                       try {
                         const r = window.STORE.upsertMentoring({ ...s, status: newStatus });
                         if (r && typeof r.then === 'function') await r;
-                      } catch (e) { alert('상태 변경 실패: ' + e.message); }
+                      } catch (e) { window.showToast('상태 변경 실패: ' + e.message, 'error'); }
                     }} />
                 ))}
               </div>
@@ -553,13 +563,13 @@ function AdminMentoringPanel({ cohortId }) {
                     try {
                       const r = window.STORE.deleteMentoring(s.id);
                       if (r && typeof r.then === 'function') await r;
-                    } catch (e) { alert('삭제 실패: ' + e.message); }
+                    } catch (e) { window.showToast('삭제 실패: ' + e.message, 'error'); }
                   }}
                   onStatusChange={async (newStatus) => {
                     try {
                       const r = window.STORE.upsertMentoring({ ...s, status: newStatus });
                       if (r && typeof r.then === 'function') await r;
-                    } catch (e) { alert('상태 변경 실패: ' + e.message); }
+                    } catch (e) { window.showToast('상태 변경 실패: ' + e.message, 'error'); }
                   }} />
               ))}
             </div>
@@ -578,7 +588,7 @@ function AdminMentoringPanel({ cohortId }) {
               if (r && typeof r.then === 'function') await r;
               setEditing(null);
             } catch (e) {
-              alert('저장 실패: ' + e.message);
+              window.showToast('저장 실패: ' + e.message, 'error');
             }
           }}
         />
@@ -633,14 +643,18 @@ function MentoringRow({ session, student, showDate, onEdit, onDelete, onStatusCh
           <option value="cancelled">취소</option>
           <option value="no_show">불참</option>
         </select>
-        <button className="btn btn-ghost btn-sm" onClick={onEdit} title="편집"><Icon.Edit /></button>
-        <button className="btn btn-ghost btn-sm" onClick={onDelete} title="삭제" style={{ color: 'var(--alert-danger)' }}><Icon.Trash /></button>
+        <button className="btn btn-ghost btn-sm" onClick={onEdit} aria-label="멘토링 세션 편집" title="편집"><Icon.Edit /></button>
+        <button className="btn btn-ghost btn-sm" onClick={onDelete} aria-label="멘토링 세션 삭제" title="삭제" style={{ color: 'var(--alert-danger)' }}><Icon.Trash /></button>
       </div>
     </div>
   );
 }
 
 function MentoringEditModal({ initial, students, onClose, onSave }) {
+  const boxRef = useRef(null);
+  const titleId = useMemo(() => 'mt-title-' + Math.random().toString(36).slice(2, 8), []);
+  window.useModalA11y(boxRef, onClose);
+
   const [form, setForm] = useState({
     id: initial.id || '',
     student_id: initial.student_id || (students[0]?.id || ''),
@@ -660,8 +674,8 @@ function MentoringEditModal({ initial, students, onClose, onSave }) {
 
   function up(k, v) { setForm(f => ({ ...f, [k]: v })); }
   async function submit() {
-    if (!form.student_id) { alert('수강생을 선택하세요'); return; }
-    if (!form.scheduled_at) { alert('일자/시간을 입력하세요'); return; }
+    if (!form.student_id) { window.showToast('수강생을 선택하세요', 'error'); return; }
+    if (!form.scheduled_at) { window.showToast('일자/시간을 입력하세요', 'error'); return; }
     setSubmitting(true);
     try {
       await onSave({ ...form });
@@ -673,10 +687,11 @@ function MentoringEditModal({ initial, students, onClose, onSave }) {
   const isNew = !form.id;
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={{ maxWidth: 560 }}>
+      <div className="modal" style={{ maxWidth: 560 }}
+        role="dialog" aria-modal="true" aria-labelledby={titleId} ref={boxRef}>
         <div className="drawer-head">
           <div>
-            <div className="h2" style={{ margin: 0 }}>{isNew ? '📅 새 멘토링 세션' : '✏️ 멘토링 편집'}</div>
+            <div className="h2" id={titleId} style={{ margin: 0 }}>{isNew ? '📅 새 멘토링 세션' : '✏️ 멘토링 편집'}</div>
             <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
               {isNew ? '새 멘토링 일정을 추가합니다' : '기존 세션을 수정합니다'}
             </div>
