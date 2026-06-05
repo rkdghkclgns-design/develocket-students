@@ -1487,12 +1487,12 @@ input, textarea, select { font-family: inherit; }
   background: rgba(20, 12, 50, 0.42);
   z-index: 60;
   animation: fadein 0.2s var(--ease) both;
-  /* 보수적 fix: flex column + center 정렬.
-     모달 자체에 max-height + 자체 scroll을 부여(sticky head 작동 보장).
-     overlay는 scroll을 두지 않음 → autoFocus가 발동시키는 overlay 자동 스크롤로
-     모달 박스가 viewport 밖으로 밀려나는 레이아웃 깨짐 차단. */
+  /* align-items: flex-start — 모달이 viewport 상단 기준 정렬.
+     center 정렬은 modal max-height이 viewport 안에 들어가지 않을 때
+     모달 박스가 viewport 위로 절반 튀어나가는 깨짐 유발. start로 안전화.
+     모달 자체에 max-height + 자체 scroll을 부여(.modal flex column + .drawer-body scroll). */
   display: flex;
-  align-items: center;
+  align-items: flex-start;          /* center → flex-start (모달 잘림 방지) */
   justify-content: center;
   padding: 24px;
   overflow: hidden;

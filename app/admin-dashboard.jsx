@@ -421,7 +421,7 @@ function StudentDetailModal({ row, threshold, onClose, onUpdate }) {
     background: 'rgba(20, 12, 50, 0.5)',
     backdropFilter: 'blur(2px)',
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',               // center → start (모달이 viewport보다 길 때 잘림 방지)
     justifyContent: 'center',
     padding: '24px',
     boxSizing: 'border-box',
