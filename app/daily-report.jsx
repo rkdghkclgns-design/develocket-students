@@ -550,7 +550,11 @@ function AdminFeedbackCard({ student }) {
         </div>
       )}
 
-      <div className="comment-list" style={{ maxHeight: compactMode ? 'none' : 480, overflowY: 'auto' }}>
+      <div className="comment-list" style={{
+        /* 댓글 6건 이하 또는 compactMode면 컨테이너 높이 제한 해제 (스크롤 트랩 방지) */
+        maxHeight: (compactMode || comments.length <= 6) ? 'none' : 480,
+        overflowY: (compactMode || comments.length <= 6) ? 'visible' : 'auto'
+      }}>
         {comments.map(c => {
           const isCollapsed = !!collapsed[c.id];
           const preview = (c.text || '').replace(/[#*`>\-]/g, '').replace(/\n+/g, ' ').trim().slice(0, 80);

@@ -2210,7 +2210,8 @@ input, textarea, select { font-family: inherit; }
   }
 
   /* 모달 — student-modal은 인라인 스타일 100vw 처리됨 ✓ */
-  .modal { max-height: calc(100vh - 16px); border-radius: 12px; }
+  /* 모바일 모달은 max-height/내부 overflow 두지 않음. overlay가 스크롤 담당하므로 헤더 잘림 방지 */
+  .modal { max-height: none; border-radius: 12px; }
   .modal-overlay { padding: 8px; }
 }
 
@@ -2562,4 +2563,69 @@ input, textarea, select { font-family: inherit; }
 }
 .comment .btn.btn-ghost.btn-sm {
   white-space: nowrap;
+}
+
+/* ==========================================================================
+   🩹 잘림(clipping) P0 일괄 패치 (2026-06-05)
+   - 다양한 inline grid·overflow·고정 width로 인한 콘텐츠 잘림 보강
+   ========================================================================== */
+
+/* P0-A: 모달 내부의 인라인 `gridTemplateColumns: '1fr 1fr'`/`'1fr 1fr 1fr'`을
+   모바일에서 단일 컬럼으로 폴백 (AddJobModal/AddStudentModal/MentoringEditModal 등 일괄) */
+@media (max-width: 720px) {
+  .modal .drawer-body[style*="1fr 1fr"] { grid-template-columns: 1fr !important; }
+  .modal .drawer-body > div[style*="1fr 1fr"] { grid-template-columns: 1fr !important; }
+  .modal .drawer-body > div[style*="repeat(3"] { grid-template-columns: 1fr !important; }
+}
+
+/* P0-B: 관리자 상단 layout-switch — 좁은 화면에서 4버튼이 화면 밖으로 튀어나가는 문제.
+   가로 스크롤 허용 + 모바일에서 패딩 축소 */
+.layout-switch {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.layout-switch::-webkit-scrollbar { display: none; }
+.layout-switch button { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 480px) {
+  .layout-switch button { font-size: 12px; padding: 6px 10px; }
+}
+
+/* P0-C: ep-grid (Export modal 등) 6컬럼 → 모바일 폴백 */
+@media (max-width: 720px) { .ep-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 480px) { .ep-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* P0-D: CohortRow ⋯ 메뉴 — 마지막 row에서 .manage-list 하단에 잘리는 문제.
+   .cohort-menu에 .flip-up 클래스가 붙으면 위로 띄움 (JS에서 토글) */
+.cohort-menu.flip-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+  box-shadow: 0 -8px 20px rgba(0,0,0,0.12);
+}
+.cohort-menu { z-index: 1000; max-width: calc(100vw - 32px); }
+
+/* P0-E: topbar user-chip — 980~720px 구간에서 학생 이름 5자+ 시 겹침 */
+.user-chip {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 720px) { .user-chip { max-width: 100px; } }
+
+/* P0-F: 한국어 줄바꿈 보강 — 어절(공백) 단위로 줄바꿈 (jobs/student 카드의 긴 제목 가독성) */
+.sj-title, .student-card-name, .att-name, .job-title-cell input,
+.smc-info .smc-title, .mentoring-row-topic {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* P0-G: JobsTab 공고명 input — maxWidth 360 안에서 잘림 보정 (tooltip 보조)
+   input은 본질적으로 한 줄이므로 사용자가 전체 텍스트 확인할 수 있도록 title 필요 (jsx에서 처리) */
+
+/* P0-H: viewport 단위 안전화 — iOS Safari 키보드 올라올 때 100vh가 줄지 않아 모달 헤더 잘림 회피.
+   dvh를 지원하는 브라우저에서 더 정확한 viewport 사용 */
+@supports (height: 100dvh) {
+  .modal-overlay { max-height: 100dvh; }
 }

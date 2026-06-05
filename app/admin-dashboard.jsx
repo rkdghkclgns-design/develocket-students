@@ -416,15 +416,16 @@ function StudentDetailModal({ row, threshold, onClose, onUpdate }) {
     inset: 0,
     top: 0, right: 0, bottom: 0, left: 0,
     width: '100vw',
-    height: '100vh',
+    height: '100dvh',                       // dvh: 모바일 키보드 올라와도 정확한 viewport
     zIndex: 99999,
     background: 'rgba(20, 12, 50, 0.5)',
     backdropFilter: 'blur(2px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: 'grid',
+    placeItems: 'safe center',              // 콘텐츠가 viewport보다 길어도 헤더 잘림 방지
     padding: '24px',
     boxSizing: 'border-box',
+    overflowY: 'auto',                      // overlay 자체 스크롤 → 긴 상세도 끝까지 접근
+    WebkitOverflowScrolling: 'touch',
     animation: 'fadein 0.18s ease both'
   };
   const boxStyle = {
@@ -432,12 +433,12 @@ function StudentDetailModal({ row, threshold, onClose, onUpdate }) {
     borderRadius: '20px',
     boxShadow: '0 24px 64px rgba(20, 12, 50, 0.32)',
     width: 'min(760px, calc(100vw - 48px))',
-    maxHeight: 'calc(100vh - 48px)',
-    minHeight: '320px',
+    minHeight: '320px',                     // maxHeight 제거 — overlay가 스크롤 담당
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
     position: 'relative',
+    margin: 'auto',
     animation: 'pop 0.22s cubic-bezier(0.16, 1, 0.3, 1) both'
   };
   const scrollWrapStyle = {

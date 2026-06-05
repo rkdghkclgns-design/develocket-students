@@ -720,6 +720,7 @@ function CohortsManagement({ onChange }) {
 function CohortRow({ cohort, archived, onArchive, onRestore, onUpdate, onMove, onToggleHidden, isFirst, isLast }) {
   const [editing, setEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [flipUp, setFlipUp] = useState(false);   // 메뉴가 viewport 하단을 넘으면 위로 flip
   const menuBtnRef = useRef(null);
   const [draft, setDraft] = useState({
     label: cohort.label,
@@ -799,7 +800,16 @@ function CohortRow({ cohort, archived, onArchive, onRestore, onUpdate, onMove, o
           <div style={{ position: 'relative' }} ref={menuBtnRef}>
             <button
               className="btn btn-ghost btn-sm"
-              onClick={() => setMenuOpen(o => !o)}
+              onClick={() => {
+                const next = !menuOpen;
+                if (next && menuBtnRef.current) {
+                  // 버튼 아래 공간이 메뉴 추정 높이(약 280px)보다 작으면 위로 flip
+                  const rect = menuBtnRef.current.getBoundingClientRect();
+                  const spaceBelow = window.innerHeight - rect.bottom;
+                  setFlipUp(spaceBelow < 280);
+                }
+                setMenuOpen(next);
+              }}
               title="기수 액션"
               aria-haspopup="true"
               aria-expanded={menuOpen}
@@ -808,7 +818,7 @@ function CohortRow({ cohort, archived, onArchive, onRestore, onUpdate, onMove, o
               ⋯ 메뉴
             </button>
             {menuOpen && (
-              <div className="cohort-menu" role="menu">
+              <div className={`cohort-menu${flipUp ? ' flip-up' : ''}`} role="menu">
                 <button className="cohort-menu-item" role="menuitem" onClick={() => pick(() => setEditing(true))}>
                   <Icon.Edit /> <span>편집</span>
                 </button>

@@ -273,7 +273,8 @@ function JobsTab({ student }) {
                     <tr>
                       <td className="job-no">{i + 1}</td>
                       <td className="job-title-cell" style={{ minWidth: 240, maxWidth: 360 }}>
-                        <input className="input" style={{ padding: '6px 8px', border: 'none', fontWeight: 500, background: 'transparent', color: 'var(--brand-primary)' }}
+                        <input className="input" style={{ padding: '6px 8px', border: 'none', fontWeight: 500, background: 'transparent', color: 'var(--brand-primary)', width: '100%' }}
+                          title={j.title || ''}
                           value={j.title} onChange={e => update(j.id, { title: e.target.value })} />
                         {j.url && j.url !== '#' && (
                           <a href={safeHref(j.url)} target="_blank" rel="noopener" style={{ marginLeft: 4 }}>
