@@ -1475,8 +1475,13 @@ input, textarea, select { font-family: inherit; }
   z-index: 60;
   animation: fadein 0.2s var(--ease) both;
   display: grid;
-  place-items: center;
+  /* safe = 콘텐츠가 컨테이너보다 클 때 음수 위치로 밀리지 않고 start로 폴백 (헤더 잘림 방지) */
+  place-items: safe center;
   padding: 24px;
+  /* overlay 자체에 스크롤을 둠 → 모달이 viewport보다 길어도 위/아래 모두 접근 가능 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 .modal {
   background: var(--surface);
@@ -1484,8 +1489,10 @@ input, textarea, select { font-family: inherit; }
   box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 640px;
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
+  /* max-height 제거: overlay가 스크롤을 담당하므로 모달은 내용 길이만큼 자연 확장.
+     이로써 .drawer-head + .drawer-body 전체가 항상 보이며,
+     viewport보다 큰 경우 overlay 스크롤로 처리됨 */
+  margin: auto;
   animation: pop 0.25s var(--ease) both;
 }
 
