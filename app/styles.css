@@ -2665,3 +2665,221 @@ input, textarea, select { font-family: inherit; }
    input은 본질적으로 한 줄이므로 사용자가 전체 텍스트 확인할 수 있도록 title 필요 (jsx에서 처리) */
 
 /* P0-H: viewport 단위는 .modal의 max-height에서 dvh로 직접 적용 (위 .modal 룰 참조) */
+
+/* ==========================================================================
+   🏷 KeywordsChipInput — 해시태그 입력
+   ========================================================================== */
+.kw-chip-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  min-height: 42px;
+  cursor: text;
+  transition: border-color 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.kw-chip-input:focus-within {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand-primary) 18%, transparent);
+}
+.kw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 8px;
+  background: color-mix(in oklab, var(--brand-primary) 12%, var(--surface));
+  color: var(--brand-primary-deep);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.kw-chip-hash { color: var(--brand-primary); margin-right: -1px; }
+.kw-chip-remove {
+  background: transparent;
+  border: none;
+  color: var(--brand-primary-deep);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 999px;
+  opacity: 0.6;
+}
+.kw-chip-remove:hover { opacity: 1; background: color-mix(in oklab, var(--brand-primary) 24%, transparent); }
+.kw-chip-field {
+  flex: 1 1 80px;
+  min-width: 80px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  font-family: inherit;
+}
+.kw-chip-mini {
+  display: inline-block;
+  padding: 1px 6px;
+  background: color-mix(in oklab, var(--brand-primary) 10%, var(--surface));
+  color: var(--brand-primary-deep);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.kw-more { font-size: 10px; color: var(--ink-mute); align-self: center; }
+
+/* ==========================================================================
+   📇 JobCard / Kanban 뷰
+   ========================================================================== */
+.job-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 14px;
+}
+.job-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease), border-color 0.15s var(--ease);
+  position: relative;
+}
+.job-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: color-mix(in oklab, var(--brand-primary) 30%, var(--line));
+}
+.job-card.inactive {
+  opacity: 0.55;
+  background: var(--bg-2);
+  filter: grayscale(0.4);
+}
+.job-card.inactive:hover { opacity: 0.8; }
+.job-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.job-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  flex: 1;
+  line-height: 1.4;
+}
+.job-card-sub {
+  font-size: 12px;
+  color: var(--ink-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.job-card-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.job-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line-soft);
+  font-size: 11px;
+}
+.jc-meta-row { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+.jc-meta-label { color: var(--ink-mute); }
+.jc-meta-value { color: var(--ink); font-weight: 500; }
+.job-card-portfolio {
+  background: color-mix(in oklab, var(--brand-accent) 8%, var(--surface));
+  border-left: 3px solid var(--brand-accent);
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  border-radius: 4px;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.job-card-url {
+  font-size: 11px;
+  color: var(--brand-primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.job-card-url:hover { text-decoration: underline; }
+.job-card-inactive-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--ink-mute);
+  color: white;
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+/* 칸반 */
+.job-kanban {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(220px, 1fr));
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+.job-kanban-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+}
+.job-kanban-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 2px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--bg-1);
+  z-index: 1;
+}
+.job-kanban-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-2);
+  padding: 8px;
+  border-radius: var(--r-sm);
+  min-height: 100px;
+}
+.job-kanban-list .job-card { padding: 10px; }
+.job-kanban-list .job-card-title { font-size: 13px; }
+.job-kanban-list .job-card-keywords { display: none; }
+.job-kanban-list .job-card-portfolio { display: none; }
+.job-kanban-empty {
+  text-align: center;
+  color: var(--ink-mute);
+  font-size: 11px;
+  padding: 16px 0;
+}
+
+@media (max-width: 720px) {
+  .job-card-grid { grid-template-columns: 1fr; }
+  .job-kanban { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 80vw; }
+}

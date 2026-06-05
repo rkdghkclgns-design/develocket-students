@@ -16,6 +16,38 @@
     return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
   };
   const uid = (prefix = 'id') => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+
+  /* ========================================================================
+     공고 정렬 우선순위 (지난/탈락 공고 후순위)
+     0순위(최우선): 활성 — 면접, 지원완료, 미지원 (단, 마감 전)
+     1순위: 마감 임박/지남 활성 공고
+     2순위: 합격 (완료된 좋은 결과)
+     3순위(후순위): 불합격, 채용시 마감, 마감 후 미지원
+     동순위 내부: 등록일 최신순
+     ======================================================================== */
+  function jobBucketOf(job) {
+    const status = job.status || '미지원';
+    const due = job.due_date;
+    const today = todayStr();
+    const isOverdue = due && due < today;
+
+    // 후순위 (3): 명시적으로 종료/탈락된 공고
+    if (status === '불합격' || status === '채용시 마감') return 3;
+    // 후순위 (3): 마감 지났는데 아직 지원 안 한 공고
+    if (isOverdue && status === '미지원') return 3;
+    // 합격은 자랑하되 끝난 공고이므로 (2)
+    if (status === '합격') return 2;
+    // 마감 지났지만 진행 중(지원완료/면접)인 공고는 활성으로 유지 (1)
+    if (isOverdue) return 1;
+    // 활성 공고 (0)
+    return 0;
+  }
+  function jobsSortByPriority(a, b) {
+    const ba = jobBucketOf(a), bb = jobBucketOf(b);
+    if (ba !== bb) return ba - bb;
+    // 동순위: 등록일 최신순
+    return (b.registered_at || '').localeCompare(a.registered_at || '');
+  }
   const weekKey = (dateStr) => {
     // ISO-ish week key based on Monday start. Returns 'YYYY-Www'
     const d = new Date(dateStr);
@@ -253,6 +285,8 @@
             updated_at: todayStr(regDate),
             planned_apply_date: todayStr(planned),
             due_date: todayStr(dueDate),
+            keywords: [],
+            portfolio_direction: '',
             url: '#',
             memo: ''
           });
@@ -557,12 +591,23 @@
     listJobs(studentId) {
       return this.db.jobs
         .filter(j => j.student_id === studentId)
-        .sort((a, b) => b.registered_at.localeCompare(a.registered_at));
+        .sort(jobsSortByPriority);
     }
     upsertJob(job) {
       let existing = this.db.jobs.find(j => j.id === job.id);
-      if (existing) Object.assign(existing, job, { updated_at: todayStr() });
-      else this.db.jobs.push({ id: uid('job'), updated_at: todayStr(), ...job });
+      if (existing) {
+        const updated = { ...existing, ...job, updated_at: todayStr() };
+        const idx = this.db.jobs.findIndex(j => j.id === existing.id);
+        this.db.jobs = [...this.db.jobs.slice(0, idx), updated, ...this.db.jobs.slice(idx + 1)];
+      } else {
+        this.db.jobs = [...this.db.jobs, {
+          id: uid('job'),
+          updated_at: todayStr(),
+          keywords: [],
+          portfolio_direction: '',
+          ...job
+        }];
+      }
       this._save();
     }
     deleteJob(jobId) {
@@ -1415,7 +1460,7 @@
     listJobs(studentId) {
       return this.db.jobs
         .filter(j => j.student_id === studentId)
-        .sort((a, b) => (b.registered_at || '').localeCompare(a.registered_at || ''));
+        .sort(jobsSortByPriority);
     }
     async upsertJob(job) {
       const row = {
@@ -1435,7 +1480,10 @@
         // 2026-06 면접 이력 확장
         applied_at: job.applied_at || null,
         interview_rounds: job.interview_rounds || [],
-        pipeline_stage: job.pipeline_stage || null
+        pipeline_stage: job.pipeline_stage || null,
+        // 2026-06-05 키워드 + 포트폴리오 방향 확장
+        keywords: Array.isArray(job.keywords) ? job.keywords : [],
+        portfolio_direction: job.portfolio_direction || ''
       };
       const { data, error } = await this.client.from(SB_TABLES.jobs)
         .upsert(row).select().single();

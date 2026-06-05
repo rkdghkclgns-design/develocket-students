@@ -157,9 +157,14 @@ function JobsTab({ student }) {
   const [editing, setEditing] = useState(null); // id of row being memo/면접-edited
   const [showAdd, setShowAdd] = useState(false);
   const [viewMode, setViewMode] = useState('all'); // 'all' | 'interview'
+  const [layout, setLayout] = useState(() => {
+    try { return localStorage.getItem('develocket.jobsLayout') || 'card'; }
+    catch { return 'card'; }
+  }); // 'card' | 'kanban' | 'table'
 
   function reload() { setJobs(window.STORE.listJobs(student.id)); }
   useEffect(() => { reload(); return window.STORE.onChange(reload); }, [student.id]);
+  useEffect(() => { try { localStorage.setItem('develocket.jobsLayout', layout); } catch {} }, [layout]);
 
   const funnel = useMemo(() => computeJobFunnel(jobs), [jobs]);
 
@@ -236,6 +241,15 @@ function JobsTab({ student }) {
           <button className={viewMode === 'interview' ? 'active' : ''} onClick={() => setViewMode('interview')}>🎤 면접 진행</button>
         </div>
 
+        <div className="layout-switch" role="tablist" aria-label="공고 레이아웃">
+          <button className={layout === 'card' ? 'active' : ''} role="tab" aria-selected={layout === 'card'}
+            onClick={() => setLayout('card')} title="카드 보기">📇 카드</button>
+          <button className={layout === 'kanban' ? 'active' : ''} role="tab" aria-selected={layout === 'kanban'}
+            onClick={() => setLayout('kanban')} title="칸반 보기">🗂 칸반</button>
+          <button className={layout === 'table' ? 'active' : ''} role="tab" aria-selected={layout === 'table'}
+            onClick={() => setLayout('table')} title="테이블 보기">📋 테이블</button>
+        </div>
+
         <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(true)}>
           <Icon.Plus /> 공고 추가
         </button>
@@ -243,6 +257,43 @@ function JobsTab({ student }) {
 
       {jobs.length > 0 && <FunnelCard funnel={funnel} />}
 
+      {layout === 'card' && (
+        filtered.length === 0 ? (
+          <div className="card" style={{ padding: 32 }}>
+            <div className="empty">
+              <div className="big">🔎</div>
+              {search ? '검색 결과가 없습니다'
+                : viewMode === 'interview' ? '면접이 진행 중인 공고가 없습니다'
+                : '아직 등록된 공고가 없습니다'}
+            </div>
+          </div>
+        ) : (
+          <div className="job-card-grid">
+            {filtered.map(j => (
+              <JobCard key={j.id} job={j}
+                onOpen={() => setEditing(editing === j.id ? null : j.id)}
+                dueState={dueState} planState={planState} />
+            ))}
+          </div>
+        )
+      )}
+
+      {layout === 'kanban' && (
+        filtered.length === 0 ? (
+          <div className="card" style={{ padding: 32 }}>
+            <div className="empty">
+              <div className="big">🗂</div>
+              {search ? '검색 결과가 없습니다' : '아직 등록된 공고가 없습니다'}
+            </div>
+          </div>
+        ) : (
+          <JobKanban jobs={filtered}
+            onOpen={(id) => setEditing(editing === id ? null : id)}
+            dueState={dueState} planState={planState} />
+        )
+      )}
+
+      {layout === 'table' && (
       <div className="card table-card">
         <div style={{ overflowX: 'auto' }}>
           <table className="jobs-table">
@@ -387,6 +438,7 @@ function JobsTab({ student }) {
           </table>
         </div>
       </div>
+      )}
 
       {showAdd && <AddJobModal onAdd={add} onClose={() => setShowAdd(false)} />}
     </div>
@@ -406,7 +458,9 @@ function AddJobModal({ onAdd, onClose }) {
     planned_apply_date: '',
     applied_at: '',
     due_date: '',
-    memo: ''
+    memo: '',
+    keywords: [],
+    portfolio_direction: ''
   });
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
   function submit() {
@@ -479,6 +533,17 @@ function AddJobModal({ onAdd, onClose }) {
             </div>
           </div>
           <div>
+            <div className="field-label">🏷 키워드 <span style={{ fontWeight: 400, color: 'var(--ink-mute)' }}>· 해시태그 형식 (Enter/쉼표/Space로 추가)</span></div>
+            <KeywordsChipInput value={form.keywords} onChange={v => update('keywords', v)} placeholder="예: 유니티 클라이언트 RPG" />
+          </div>
+          <div>
+            <div className="field-label">🎯 포트폴리오 방향 <span style={{ fontWeight: 400, color: 'var(--ink-mute)' }}>· 이 공고를 위해 보강할 작업물</span></div>
+            <textarea className="input" value={form.portfolio_direction}
+              onChange={e => update('portfolio_direction', e.target.value)}
+              placeholder="예: 인디 RPG 프로토타입 영상, 시스템 기획서 1편"
+              rows={2} style={{ resize: 'vertical', minHeight: 56, fontFamily: 'inherit' }} />
+          </div>
+          <div>
             <div className="field-label">비고 (마크다운)</div>
             <MarkdownEditor value={form.memo} onChange={v => update('memo', v)} placeholder="필요한 메모를 작성하세요" rows={3} minimal />
           </div>
@@ -494,6 +559,166 @@ function AddJobModal({ onAdd, onClose }) {
   );
 }
 
+/* ==========================================================================
+   🏷 KeywordsChipInput — 해시태그 형식 키워드 입력
+   - Enter/쉼표/Space로 키워드 추가
+   - Backspace로 마지막 키워드 제거
+   - 중복 제거 + 최대 길이 제한
+   ========================================================================== */
+function KeywordsChipInput({ value, onChange, placeholder }) {
+  const tags = Array.isArray(value) ? value : [];
+  const [draft, setDraft] = useState('');
+  function add(raw) {
+    const t = (raw || '').trim().replace(/^#+/, '').slice(0, 20);
+    if (!t) return;
+    if (tags.includes(t)) { setDraft(''); return; }
+    if (tags.length >= 20) { setDraft(''); return; }
+    onChange([...tags, t]);
+    setDraft('');
+  }
+  function removeAt(i) { onChange(tags.filter((_, idx) => idx !== i)); }
+  function onKey(e) {
+    if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+      e.preventDefault();
+      add(draft);
+    } else if (e.key === 'Backspace' && !draft && tags.length) {
+      e.preventDefault();
+      onChange(tags.slice(0, -1));
+    }
+  }
+  function onPaste(e) {
+    const text = (e.clipboardData || window.clipboardData).getData('text');
+    if (text && /[,\s]/.test(text)) {
+      e.preventDefault();
+      text.split(/[,\s]+/).forEach(t => add(t));
+    }
+  }
+  return (
+    <div className="kw-chip-input">
+      {tags.map((t, i) => (
+        <span key={i} className="kw-chip">
+          <span className="kw-chip-hash">#</span>{t}
+          <button type="button" className="kw-chip-remove" onClick={() => removeAt(i)} aria-label={`${t} 제거`}>×</button>
+        </span>
+      ))}
+      <input
+        className="kw-chip-field"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={onKey}
+        onPaste={onPaste}
+        onBlur={() => draft && add(draft)}
+        placeholder={tags.length ? '' : (placeholder || '해시태그 입력')}
+      />
+    </div>
+  );
+}
+
+/* ==========================================================================
+   📇 JobCard — 카드 뷰의 개별 공고 카드
+   ========================================================================== */
+function JobCard({ job, onOpen, dueState, planState }) {
+  const sty = JOB_STATUS_STYLES[job.status] || JOB_STATUS_STYLES['미지원'];
+  const dueLabel = dueState(job.due_date);
+  const planLabel = planState(job.planned_apply_date);
+  const status = job.status || '미지원';
+  const isInactive = status === '불합격' || status === '채용시 마감' ||
+    (job.due_date && job.due_date < window.STORE_HELPERS.todayStr() && status === '미지원');
+
+  return (
+    <div className={`job-card ${isInactive ? 'inactive' : ''}`} onClick={onOpen}>
+      <div className="job-card-head">
+        <div className="job-card-title" title={job.title}>{job.title || '(공고명 없음)'}</div>
+        <span className="pill" style={{ background: sty.bg, color: sty.fg, flexShrink: 0 }}>{status}</span>
+      </div>
+      <div className="job-card-sub">
+        {job.company && <span><b>{job.company}</b></span>}
+        {job.role && <span>· {job.role}</span>}
+        <span className="muted">· 관심도 {job.interest}/10</span>
+      </div>
+      {Array.isArray(job.keywords) && job.keywords.length > 0 && (
+        <div className="job-card-keywords">
+          {job.keywords.slice(0, 6).map((k, i) => (
+            <span key={i} className="kw-chip-mini">#{k}</span>
+          ))}
+          {job.keywords.length > 6 && <span className="kw-more">+{job.keywords.length - 6}</span>}
+        </div>
+      )}
+      <div className="job-card-meta">
+        {job.registered_at && (
+          <div className="jc-meta-row">
+            <span className="jc-meta-label">📅 등록</span>
+            <span className="jc-meta-value">{job.registered_at}</span>
+          </div>
+        )}
+        {planLabel && (
+          <div className="jc-meta-row">
+            <span className="jc-meta-label">📌 지원예정</span>
+            <span className="jc-meta-value">{job.planned_apply_date} <span className={`pill pill-${planLabel.cls}`} style={{ fontSize: 10 }}>{planLabel.label}</span></span>
+          </div>
+        )}
+        {job.due_date && (
+          <div className="jc-meta-row">
+            <span className="jc-meta-label">⏰ 마감</span>
+            <span className="jc-meta-value">{job.due_date} {dueLabel && <span className={`pill pill-${dueLabel.cls}`} style={{ fontSize: 10 }}>{dueLabel.label}</span>}</span>
+          </div>
+        )}
+      </div>
+      {job.portfolio_direction && (
+        <div className="job-card-portfolio" title={job.portfolio_direction}>
+          🎯 {job.portfolio_direction}
+        </div>
+      )}
+      {job.url && (
+        <a href={safeHref(job.url)} target="_blank" rel="noopener"
+          className="job-card-url" onClick={e => e.stopPropagation()}>
+          <Icon.External /> 공고 원문 보기
+        </a>
+      )}
+      {isInactive && <div className="job-card-inactive-badge">종료된 공고</div>}
+    </div>
+  );
+}
+
+/* ==========================================================================
+   🗂 JobKanban — 칸반 뷰 (상태별 컬럼)
+   ========================================================================== */
+function JobKanban({ jobs, onOpen, dueState, planState }) {
+  const columns = JOB_STATUSES;
+  const grouped = useMemo(() => {
+    const map = Object.fromEntries(columns.map(s => [s, []]));
+    jobs.forEach(j => {
+      const s = map[j.status] ? j.status : '미지원';
+      map[s].push(j);
+    });
+    return map;
+  }, [jobs]);
+  return (
+    <div className="job-kanban">
+      {columns.map(status => {
+        const list = grouped[status] || [];
+        const sty = JOB_STATUS_STYLES[status] || JOB_STATUS_STYLES['미지원'];
+        return (
+          <div key={status} className="job-kanban-col">
+            <div className="job-kanban-head">
+              <span className="pill" style={{ background: sty.bg, color: sty.fg }}>{status}</span>
+              <span className="muted" style={{ fontSize: 11 }}>{list.length}개</span>
+            </div>
+            <div className="job-kanban-list">
+              {list.length === 0 ? (
+                <div className="job-kanban-empty">—</div>
+              ) : list.map(j => (
+                <JobCard key={j.id} job={j} onOpen={() => onOpen(j.id)}
+                  dueState={dueState} planState={planState} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 window.JobsTab = JobsTab;
 window.JOB_STATUS_STYLES = JOB_STATUS_STYLES;
 window.JOB_STATUSES = JOB_STATUSES;
@@ -502,3 +727,6 @@ window.computeJobFunnel = computeJobFunnel;
 window.InterviewRoundsEditor = InterviewRoundsEditor;
 window.roundsSummary = roundsSummary;
 window.ROUND_STATUS_STYLES = ROUND_STATUS_STYLES;
+window.KeywordsChipInput = KeywordsChipInput;
+window.JobCard = JobCard;
+window.JobKanban = JobKanban;
