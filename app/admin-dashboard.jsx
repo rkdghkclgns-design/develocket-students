@@ -433,9 +433,9 @@ function StudentDetailModal({ row, threshold, onClose, onUpdate }) {
     borderRadius: '20px',
     boxShadow: '0 24px 64px rgba(20, 12, 50, 0.32)',
     width: 'min(760px, calc(100vw - 48px))',
-    maxHeight: 'calc(100dvh - 48px)',       // 모달 자체 max-height + 내부 scroll
+    maxHeight: '100%',                      // overlay 기준 — viewport unit 호환성 무관
     minHeight: '320px',
-    overflow: 'hidden',                     // 자식 scrollWrap이 내부 scroll
+    overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
     position: 'relative',

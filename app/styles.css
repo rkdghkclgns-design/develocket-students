@@ -1506,8 +1506,10 @@ input, textarea, select { font-family: inherit; }
   /* 견고한 패턴: flex column으로 head/body 분리.
      - .drawer-head는 flex-shrink: 0 → 항상 모달 상단에 보임 (sticky 의존 X)
      - .drawer-body만 자체 scroll → autoFocus 자동 스크롤도 body 내부로만 한정
-     모달 자체에는 overflow: hidden — 자식이 스크롤 영역 책임 */
-  max-height: calc(100dvh - 48px);
+     모달 자체에는 overflow: hidden — 자식이 스크롤 영역 책임
+     max-height: 100% — overlay(부모, fixed inset:0)의 content area 기준이라
+     viewport unit 호환성 이슈 없이 항상 viewport 안에 fit. dvh 사용 안 함. */
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2229,8 +2231,8 @@ input, textarea, select { font-family: inherit; }
   }
 
   /* 모달 — student-modal은 인라인 스타일 100vw 처리됨 ✓ */
-  /* 모바일에서도 모달 자체 scroll 유지. dvh 사용으로 키보드 보정 */
-  .modal { max-height: calc(100dvh - 16px); border-radius: 12px; }
+  /* 모바일도 부모(overlay) 기준 max-height로 통일 — viewport 단위 호환성 무관 */
+  .modal { max-height: 100%; border-radius: 12px; }
   .modal-overlay { padding: 8px; }
 }
 
