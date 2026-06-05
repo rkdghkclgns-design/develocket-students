@@ -480,7 +480,7 @@ function AddJobModal({ onAdd, onClose }) {
           </div>
           <div>
             <div className="field-label">비고 (마크다운)</div>
-            <MarkdownEditor value={form.memo} onChange={v => update('memo', v)} placeholder="필요한 메모를 작성하세요" rows={5} />
+            <MarkdownEditor value={form.memo} onChange={v => update('memo', v)} placeholder="필요한 메모를 작성하세요" rows={3} minimal />
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button className="btn btn-secondary" onClick={onClose}>취소</button>
