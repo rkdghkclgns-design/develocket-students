@@ -1150,9 +1150,22 @@ input, textarea, select { font-family: inherit; }
   padding: 22px 26px;
   display: flex; align-items: center; gap: 14px;
   border-bottom: 1px solid var(--line);
+  /* sticky 유지 (Drawer 컴포넌트가 자체 scroll context인 경우 대비).
+     .modal 안에서는 flex-shrink:0이 우선이라 항상 상단에 고정됨 */
   position: sticky; top: 0; background: var(--surface); z-index: 1;
+  flex-shrink: 0;
 }
+/* drawer-body: Drawer/Modal 모두에서 자체 scroll 가능.
+   .modal 안에서는 flex:1 + overflow:auto로 head 아래 영역만 스크롤 */
 .drawer-body { padding: 22px 26px; }
+.modal > .drawer-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
 .drawer-close {
   margin-left: auto;
   border: none; background: transparent; padding: 8px; border-radius: 8px;
@@ -1490,12 +1503,14 @@ input, textarea, select { font-family: inherit; }
   box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 640px;
-  /* 모달 자체가 viewport 안에 들어가도록 max-height + 자체 scroll.
-     drawer-head sticky가 .modal scroll context 안에서 정상 작동. */
+  /* 견고한 패턴: flex column으로 head/body 분리.
+     - .drawer-head는 flex-shrink: 0 → 항상 모달 상단에 보임 (sticky 의존 X)
+     - .drawer-body만 자체 scroll → autoFocus 자동 스크롤도 body 내부로만 한정
+     모달 자체에는 overflow: hidden — 자식이 스크롤 영역 책임 */
   max-height: calc(100dvh - 48px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   margin: 0 auto;
   animation: pop 0.25s var(--ease) both;
 }
