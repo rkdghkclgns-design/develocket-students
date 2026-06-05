@@ -425,7 +425,7 @@ function AddJobModal({ onAdd, onClose }) {
         <div className="drawer-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <div className="field-label">공고명 *</div>
-            <input className="input" value={form.title} onChange={e => update('title', e.target.value)} placeholder="예: [Pearl Abyss] 게임 기획자 신입 채용" autoFocus />
+            <input className="input" value={form.title} onChange={e => update('title', e.target.value)} placeholder="예: [Pearl Abyss] 게임 기획자 신입 채용" />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
@@ -457,7 +457,7 @@ function AddJobModal({ onAdd, onClose }) {
               <InterestPicker value={form.interest} onChange={v => update('interest', v)} compact />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <div>
               <div className="field-label">📅 지원 예정일</div>
               <input type="date" className="input" value={form.planned_apply_date} onChange={e => update('planned_apply_date', e.target.value)} />

@@ -351,13 +351,19 @@ function useModalA11y(boxRef, onClose) {
     window.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    // 첫 포커서블 요소에 자동 포커스
+    // 자동 포커스는 모달 컨테이너에만 부여 (input/textarea에 focus 주면
+    // 브라우저 scrollIntoView가 발동하여 모달이 viewport 밖으로 밀리고 헤더가 잘림).
+    // 키보드 사용자는 Tab으로 첫 입력 필드로 자연 이동 가능.
     setTimeout(() => {
       if (!boxRef.current) return;
-      const first = boxRef.current.querySelector(
-        'input:not([disabled]):not([type="hidden"]),textarea:not([disabled]),select:not([disabled]),button:not([disabled])'
-      );
-      first && first.focus();
+      // 닫기 버튼(.drawer-close)을 우선 포커스 (모달 박스 안 최상단 + scrollIntoView 안전)
+      const closeBtn = boxRef.current.querySelector('.drawer-close, [aria-label="닫기"]');
+      if (closeBtn) { closeBtn.focus({ preventScroll: true }); return; }
+      // 폴백: 모달 박스 자체 (focus 가능하도록 tabIndex=-1 일시 부여)
+      if (!boxRef.current.hasAttribute('tabindex')) {
+        boxRef.current.setAttribute('tabindex', '-1');
+      }
+      boxRef.current.focus({ preventScroll: true });
     }, 0);
     return () => {
       window.removeEventListener('keydown', onKey);

@@ -277,7 +277,7 @@ function AddStudentModal({ defaultCohort, onAdd, onClose }) {
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <div className="field-label">이름 *</div>
-            <input className="input" autoFocus value={form.name} onChange={e => update('name', e.target.value)} placeholder="이름" />
+            <input className="input" value={form.name} onChange={e => update('name', e.target.value)} placeholder="이름" />
           </div>
           <div>
             <div className="field-label">생년월일 <span style={{ fontWeight: 400, color: 'var(--ink-mute)' }}>· 나이 자동</span></div>
@@ -914,7 +914,7 @@ function AddCohortModal({ onAdd, onClose }) {
         <div className="drawer-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div style={{ gridColumn: '1 / -1' }}>
             <div className="field-label">기수 ID *</div>
-            <input className="input" autoFocus value={form.id}
+            <input className="input" value={form.id}
               onChange={e => up('id', e.target.value)}
               placeholder="예: 기획4기, 프로그램4기" />
             <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>고유 식별자. 변경 불가하므로 신중하게 입력하세요.</div>

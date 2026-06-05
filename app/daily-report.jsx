@@ -699,7 +699,7 @@ function SelfPasswordCard({ student }) {
             placeholder="현재 비밀번호"
             value={currentPw}
             onChange={e => { setCurrentPw(e.target.value); setErr(''); }}
-            autoFocus />
+            />
           <input type="password" className="input"
             placeholder="새 비밀번호 (4자 이상)"
             value={newPw}
@@ -734,7 +734,7 @@ function SelfPasswordCard({ student }) {
             value={currentPw}
             onChange={e => { setCurrentPw(e.target.value); setErr(''); }}
             onKeyDown={e => { if (e.key === 'Enter') resetPw(); }}
-            autoFocus />
+            />
           {err && <div className="field-error">⚠ {err}</div>}
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn btn-ghost btn-sm" onClick={cancel}>취소</button>
