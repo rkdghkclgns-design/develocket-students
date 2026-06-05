@@ -395,6 +395,10 @@ function JobsTab({ student }) {
 
 function AddJobModal({ onAdd, onClose }) {
   const todayStr = window.STORE_HELPERS.todayStr();
+  const boxRef = useRef(null);
+  const titleId = useMemo(() => 'add-job-title-' + Math.random().toString(36).slice(2, 8), []);
+  window.useModalA11y(boxRef, onClose);   // body scroll lock + ESC + focus trap
+
   const [form, setForm] = useState({
     title: '', company: '', role: '', url: '',
     status: '미지원', interest: 5,
@@ -407,20 +411,20 @@ function AddJobModal({ onAdd, onClose }) {
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
   function submit() {
     if (!form.title.trim() || !form.company.trim()) {
-      alert('공고명과 회사명은 필수입니다.');
+      window.showToast('공고명과 회사명은 필수입니다.', 'error');
       return;
     }
     onAdd({ ...form, interest: Math.min(10, Math.max(1, form.interest || 1)) });
   }
   return (
     <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal">
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={boxRef}>
         <div className="drawer-head">
           <div>
-            <div className="h2" style={{ margin: 0 }}>새 공고 추가</div>
+            <div className="h2" id={titleId} style={{ margin: 0 }}>새 공고 추가</div>
             <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>관심 있는 공고를 등록하세요</div>
           </div>
-          <button className="drawer-close" onClick={onClose}><Icon.X /></button>
+          <button className="drawer-close" onClick={onClose} aria-label="닫기"><Icon.X /></button>
         </div>
         <div className="drawer-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>

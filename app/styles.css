@@ -1483,18 +1483,23 @@ input, textarea, select { font-family: inherit; }
 
 /* Modal — centered for create flows */
 .modal-overlay {
-  position: fixed; inset: 0;
+  /* 명시적 width/height를 100vw/100vh + 100dvh fallback으로 강제.
+     일부 모바일/scaled 환경에서 inset:0만으로는 viewport 전체를 못 잡는 경우 대비.
+     backdrop이 페이지 일부만 덮고 나머지 영역이 노출되는 회귀 차단. */
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  min-height: 100dvh;
   background: rgba(20, 12, 50, 0.42);
   z-index: 60;
   animation: fadein 0.2s var(--ease) both;
-  /* align-items: flex-start — 모달이 viewport 상단 기준 정렬.
-     center 정렬은 modal max-height이 viewport 안에 들어가지 않을 때
-     모달 박스가 viewport 위로 절반 튀어나가는 깨짐 유발. start로 안전화.
-     모달 자체에 max-height + 자체 scroll을 부여(.modal flex column + .drawer-body scroll). */
   display: flex;
-  align-items: flex-start;          /* center → flex-start (모달 잘림 방지) */
+  align-items: flex-start;
   justify-content: center;
   padding: 24px;
+  box-sizing: border-box;
   overflow: hidden;
 }
 .modal {
