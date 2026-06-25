@@ -292,7 +292,7 @@ function AddStudentModal({ defaultCohort, onAdd, onClose }) {
     onAdd({ ...form, age: parseInt(form.age) || null });
   }
 
-  return (
+  return ReactDOM.createPortal(
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" style={{ maxWidth: 560 }}
         role="dialog" aria-modal="true" aria-labelledby={titleId} ref={boxRef}>
@@ -361,7 +361,8 @@ function AddStudentModal({ defaultCohort, onAdd, onClose }) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -936,7 +937,7 @@ function AddCohortModal({ onAdd, onClose }) {
       setSubmitting(false);
     }
   }
-  return (
+  return ReactDOM.createPortal(
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" style={{ maxWidth: 520 }}>
         <div className="drawer-head">
@@ -986,7 +987,8 @@ function AddCohortModal({ onAdd, onClose }) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1168,7 +1170,7 @@ function BulkUploadModal({ defaultCohort, onClose, onComplete }) {
     );
   }
 
-  return (
+  return ReactDOM.createPortal(
     <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" style={{ maxWidth: 720 }}
         role="dialog" aria-modal="true" aria-labelledby={titleId} ref={boxRef}>
@@ -1333,7 +1335,8 @@ function BulkUploadModal({ defaultCohort, onClose, onComplete }) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

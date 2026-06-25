@@ -1145,7 +1145,10 @@ input, textarea, select { font-family: inherit; }
   overflow-y: auto;
   animation: slidein 0.28s var(--ease) both;
 }
-@keyframes slidein { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+/* to에서 transform: none — animation 종료 후 컨테이닝 블록 영향 제거.
+   (translateX(0)이라도 transform 속성이 활성화되어 있으면 자식 position:fixed가
+    viewport가 아닌 .drawer 기준이 되어 안의 모달이 깨짐) */
+@keyframes slidein { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
 .drawer-head {
   padding: 22px 26px;
   display: flex; align-items: center; gap: 14px;
