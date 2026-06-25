@@ -28,6 +28,7 @@ function AdminManageDrawer({ cohortId, kpiTarget, onChangeKpi, onClose, onChange
   const [editingId, setEditingId] = useState(null);
   const [addCohort, setAddCohort] = useState(cohortId);
   const [showAdd, setShowAdd] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
   const [_, force] = useState(0);
 
   const allStudents = useMemo(() => {
@@ -77,6 +78,14 @@ function AdminManageDrawer({ cohortId, kpiTarget, onChangeKpi, onClose, onChange
                   <input className="input" placeholder="이름으로 검색"
                     value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
+                <button className="btn btn-ghost btn-sm" onClick={downloadCsvSample}
+                  title="CSV 샘플 다운로드 (UTF-8 BOM, Excel 한글 호환)">
+                  📥 CSV 샘플
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setShowBulk(true); setAddCohort(cohortId); }}
+                  title="CSV 파일로 여러 수강생을 한 번에 등록">
+                  📤 CSV 업로드
+                </button>
                 <button className="btn btn-primary btn-sm" onClick={() => { setShowAdd(true); setAddCohort(cohortId); }}>
                   <Icon.Plus /> 수강생 추가
                 </button>
@@ -116,6 +125,14 @@ function AdminManageDrawer({ cohortId, kpiTarget, onChangeKpi, onClose, onChange
                     }
                   }}
                   onClose={() => setShowAdd(false)}
+                />
+              )}
+
+              {showBulk && (
+                <BulkUploadModal
+                  defaultCohort={addCohort}
+                  onClose={() => setShowBulk(false)}
+                  onComplete={() => { setShowBulk(false); refresh(); }}
                 />
               )}
             </>
@@ -968,7 +985,355 @@ function AddCohortModal({ onAdd, onClose }) {
   );
 }
 
+/* ==========================================================================
+   📤 BulkUploadModal — CSV 일괄 업로드
+   - CSV 헤더 한국어/영문 동시 지원
+   - 미리보기 + 검증 + 순차 등록 + 진행률
+   ========================================================================== */
+
+/* CSV mini parser: RFC4180 부분 지원 (따옴표 안의 콤마/줄바꿈 처리) */
+function parseCsv(text) {
+  // BOM 제거
+  let s = text.replace(/^﻿/, '');
+  const rows = [];
+  let row = [], field = '', i = 0, inQ = false;
+  while (i < s.length) {
+    const c = s[i];
+    if (inQ) {
+      if (c === '"') {
+        if (s[i + 1] === '"') { field += '"'; i += 2; continue; }
+        inQ = false; i++; continue;
+      }
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQ = true; i++; continue; }
+    if (c === ',') { row.push(field); field = ''; i++; continue; }
+    if (c === '\r') { i++; continue; }
+    if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+    field += c; i++;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.length && !(r.length === 1 && r[0] === ''));
+}
+
+/* CSV 헤더 → student field 매핑 (한국어 / 영문 모두 지원) */
+const CSV_HEADER_MAP = {
+  '이름': 'name', 'name': 'name',
+  '기수': 'cohort', 'cohort': 'cohort',
+  '생년월일': 'birthDate', 'birthdate': 'birthDate', 'birth_date': 'birthDate', 'dob': 'birthDate',
+  '나이': 'age', 'age': 'age',
+  '성별': 'gender', 'gender': 'gender',
+  '전화번호': 'phone', '전화': 'phone', 'phone': 'phone', 'mobile': 'phone',
+  '이메일': 'email', 'email': 'email', 'mail': 'email',
+  '주소(시/도)': 'addr1', '주소시도': 'addr1', '시도': 'addr1', 'addr1': 'addr1',
+  '주소(상세)': 'addr2', '주소상세': 'addr2', '상세주소': 'addr2', 'addr2': 'addr2',
+  '학력': 'education', '전공': 'education', '전공/학력': 'education', 'education': 'education', 'major': 'education',
+  '학번': 'grade', '등급': 'grade', 'grade': 'grade',
+  '희망직군': 'career_goal', '진로': 'career_goal', 'career_goal': 'career_goal', 'goal': 'career_goal',
+  '취업상태': 'employment_status', 'employment_status': 'employment_status', 'status': 'employment_status',
+  '드라이브': 'drive_link', '드라이브링크': 'drive_link', 'drive': 'drive_link', 'drive_link': 'drive_link'
+};
+
+function normalizeHeader(h) {
+  return String(h || '').trim().toLowerCase().replace(/\s+/g, '').replace(/[()]/g, '');
+}
+function normalizeGender(g) {
+  const t = String(g || '').trim().toUpperCase();
+  if (['M', '남', '남자', 'MALE'].includes(t)) return 'M';
+  if (['F', '여', '여자', 'FEMALE'].includes(t)) return 'F';
+  return 'M';
+}
+
+/* CSV 샘플 다운로드 — UTF-8 BOM 포함 (Excel 한글 깨짐 방지) */
+function downloadCsvSample() {
+  const headers = ['이름', '기수', '생년월일', '나이', '성별', '전화번호', '이메일', '주소(시/도)', '주소(상세)', '전공/학력', '희망직군'];
+  const cohortKeys = Object.keys(window.STUDENT_ROSTER || {});
+  const sampleCohort = cohortKeys[0] || '기획3기';
+  const rows = [
+    ['홍길동', sampleCohort, '2000-03-15', '25', '남', '010-1234-5678', 'hong@example.com', '서울특별시', '강남구 테헤란로 123', '경일대학교 게임공학과', '게임 기획자'],
+    ['김민지', sampleCohort, '2001-07-22', '24', '여', '010-9876-5432', 'minji@example.com', '경기도', '성남시 분당구 판교로 45', '한양대학교 컴퓨터공학', '백엔드 개발자'],
+    ['이서준', sampleCohort, '1999-11-08', '26', '남', '010-1111-2222', 'seojun@example.com', '대구광역시', '수성구 동대구로 78', '경북대학교 멀티미디어', '프론트엔드 개발자']
+  ];
+  const escape = (v) => {
+    const s = String(v == null ? '' : v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = '﻿' + [headers, ...rows].map(r => r.map(escape).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `수강생_일괄등록_샘플_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  window.showToast && window.showToast('CSV 샘플 다운로드 — Excel에서 열어 채우신 후 [📤 CSV 업로드]에서 가져오세요', 'info', 3500);
+}
+
+function BulkUploadModal({ defaultCohort, onClose, onComplete }) {
+  const boxRef = useRef(null);
+  const titleId = useMemo(() => 'bulk-upload-title-' + Math.random().toString(36).slice(2, 8), []);
+  window.useModalA11y(boxRef, onClose);
+
+  const [step, setStep] = useState('select');   // 'select' | 'preview' | 'uploading' | 'done'
+  const [rawText, setRawText] = useState('');
+  const [parsed, setParsed] = useState(null);    // { headers, rows: [{...student}], errors: [{row, msg}] }
+  const [progress, setProgress] = useState({ done: 0, total: 0, failed: [] });
+  const cohortKeys = useMemo(() => Object.keys(window.STUDENT_ROSTER || {}), []);
+
+  function onPick(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = String(e.target.result || '');
+      setRawText(text);
+      analyze(text);
+    };
+    reader.onerror = () => {
+      window.showToast && window.showToast('파일 읽기 실패', 'error');
+    };
+    reader.readAsText(file, 'utf-8');
+  }
+
+  function analyze(text) {
+    const rows = parseCsv(text);
+    if (rows.length < 2) {
+      setParsed({ headers: [], rows: [], errors: [{ row: 0, msg: '데이터 행이 없습니다. 헤더 + 최소 1행 필요.' }] });
+      setStep('preview');
+      return;
+    }
+    const headers = rows[0].map(normalizeHeader);
+    const fields = headers.map(h => CSV_HEADER_MAP[h] || null);
+    const errors = [];
+    if (!fields.includes('name')) errors.push({ row: 0, msg: '"이름" 컬럼이 없습니다.' });
+    if (!fields.includes('cohort')) errors.push({ row: 0, msg: '"기수" 컬럼이 없습니다.' });
+    const students = [];
+    for (let r = 1; r < rows.length; r++) {
+      const cells = rows[r];
+      const obj = {};
+      fields.forEach((f, i) => { if (f) obj[f] = (cells[i] || '').trim(); });
+      // 기본값/변환
+      if (!obj.name) { errors.push({ row: r, msg: `${r}행: 이름 누락` }); continue; }
+      if (!obj.cohort) { errors.push({ row: r, msg: `${r}행: 기수 누락` }); continue; }
+      if (!cohortKeys.includes(obj.cohort)) {
+        errors.push({ row: r, msg: `${r}행: 알 수 없는 기수 "${obj.cohort}" — 등록 가능 기수: ${cohortKeys.join(', ')}` });
+        continue;
+      }
+      obj.gender = normalizeGender(obj.gender);
+      if (obj.age) obj.age = parseInt(obj.age) || null;
+      // 생년월일 → 나이 자동
+      if (obj.birthDate && !obj.age && window.calcAgeFromBirthDate) {
+        const a = window.calcAgeFromBirthDate(obj.birthDate);
+        if (a !== null) obj.age = a;
+      }
+      // 중복 검사
+      const exists = window.STORE.getStudentByCohortName
+        ? window.STORE.getStudentByCohortName(obj.cohort, obj.name)
+        : null;
+      if (exists) {
+        errors.push({ row: r, msg: `${r}행: ${obj.cohort}에 "${obj.name}" 이미 존재 — 건너뜀` });
+        continue;
+      }
+      students.push({ _row: r, ...obj });
+    }
+    setParsed({ headers, fields, rows: students, errors });
+    setStep('preview');
+  }
+
+  async function startUpload() {
+    if (!parsed || !parsed.rows.length) return;
+    setStep('uploading');
+    const failed = [];
+    setProgress({ done: 0, total: parsed.rows.length, failed: [] });
+    for (let i = 0; i < parsed.rows.length; i++) {
+      const s = parsed.rows[i];
+      try {
+        const r = window.STORE.addStudent(s.cohort, s);
+        if (r && typeof r.then === 'function') await r;
+      } catch (e) {
+        failed.push({ row: s._row, name: s.name, msg: e.message || String(e) });
+      }
+      setProgress({ done: i + 1, total: parsed.rows.length, failed: failed.slice() });
+    }
+    setStep('done');
+    window.showToast && window.showToast(
+      failed.length
+        ? `${parsed.rows.length - failed.length}/${parsed.rows.length}명 등록 · ${failed.length}건 실패`
+        : `✓ ${parsed.rows.length}명 일괄 등록 완료`,
+      failed.length ? 'info' : 'success', 3500
+    );
+  }
+
+  return (
+    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{ maxWidth: 720 }}
+        role="dialog" aria-modal="true" aria-labelledby={titleId} ref={boxRef}>
+        <div className="drawer-head">
+          <div>
+            <div className="h2" id={titleId} style={{ margin: 0 }}>📤 수강생 CSV 일괄 업로드</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+              CSV 파일을 선택하면 미리보기 → 검증 → 일괄 등록을 진행합니다
+            </div>
+          </div>
+          <button className="drawer-close" onClick={onClose} aria-label="닫기"><Icon.X /></button>
+        </div>
+        <div className="drawer-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {step === 'select' && (
+            <>
+              <div style={{ padding: 12, background: 'var(--surface-2)', borderRadius: 'var(--r-sm)', fontSize: 13, lineHeight: 1.6 }}>
+                <b>📋 사용 방법</b>
+                <ol style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                  <li><b>[📥 CSV 샘플]</b> 버튼으로 양식을 받으세요 (UTF-8 BOM 포함, Excel 호환)</li>
+                  <li>Excel/Numbers에서 열어 데이터를 채운 후 <b>CSV 형식으로 저장</b></li>
+                  <li>아래에서 파일 선택 → 미리보기에서 확인 → 등록 실행</li>
+                </ol>
+                <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+                  필수: <b>이름</b>, <b>기수</b> · 선택: 생년월일, 나이, 성별(남/여 또는 M/F), 전화번호, 이메일, 주소, 학력, 희망직군
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button className="btn btn-secondary" onClick={downloadCsvSample}>
+                  📥 CSV 샘플 다운로드
+                </button>
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <label className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  📁 CSV 파일 선택
+                  <input type="file" accept=".csv,text/csv" style={{ display: 'none' }}
+                    onChange={e => onPick(e.target.files && e.target.files[0])} />
+                </label>
+                <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+                  현재 등록 가능 기수: <b>{cohortKeys.join(', ') || '(기수 없음)'}</b>
+                </div>
+              </div>
+            </>
+          )}
+
+          {step === 'preview' && parsed && (
+            <>
+              <div style={{ display: 'flex', gap: 12, fontSize: 13 }}>
+                <span className="pill" style={{ background: 'var(--brand-primary-soft)', color: 'var(--brand-primary-deep)' }}>
+                  ✓ 등록 가능: <b>{parsed.rows.length}</b>건
+                </span>
+                {parsed.errors.length > 0 && (
+                  <span className="pill" style={{ background: 'var(--alert-warn-bg)', color: 'var(--alert-warn)' }}>
+                    ⚠ 건너뜀/오류: <b>{parsed.errors.length}</b>건
+                  </span>
+                )}
+              </div>
+
+              {parsed.errors.length > 0 && (
+                <details open style={{ background: 'var(--alert-warn-bg)', padding: 10, borderRadius: 'var(--r-sm)' }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 600 }}>⚠ 오류 / 건너뛴 행 ({parsed.errors.length})</summary>
+                  <ul style={{ margin: '8px 0 0 18px', padding: 0, fontSize: 12, maxHeight: 120, overflowY: 'auto' }}>
+                    {parsed.errors.map((e, i) => <li key={i}>{e.msg}</li>)}
+                  </ul>
+                </details>
+              )}
+
+              {parsed.rows.length > 0 && (
+                <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--r-sm)', overflow: 'hidden' }}>
+                  <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                    <table className="simple-table" style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                      <thead style={{ position: 'sticky', top: 0, background: 'var(--surface-2)' }}>
+                        <tr>
+                          <th style={{ padding: 6, textAlign: 'left' }}>이름</th>
+                          <th style={{ padding: 6, textAlign: 'left' }}>기수</th>
+                          <th style={{ padding: 6, textAlign: 'left' }}>생년월일</th>
+                          <th style={{ padding: 6, textAlign: 'left' }}>나이</th>
+                          <th style={{ padding: 6, textAlign: 'left' }}>성별</th>
+                          <th style={{ padding: 6, textAlign: 'left' }}>이메일</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parsed.rows.slice(0, 50).map((s, i) => (
+                          <tr key={i} style={{ borderTop: '1px solid var(--line-soft)' }}>
+                            <td style={{ padding: 6, fontWeight: 600 }}>{s.name}</td>
+                            <td style={{ padding: 6 }}>{s.cohort}</td>
+                            <td style={{ padding: 6 }}>{s.birthDate || '—'}</td>
+                            <td style={{ padding: 6 }}>{s.age || '—'}</td>
+                            <td style={{ padding: 6 }}>{s.gender === 'F' ? '여' : '남'}</td>
+                            <td style={{ padding: 6 }}>{s.email || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {parsed.rows.length > 50 && (
+                    <div className="muted" style={{ padding: 6, textAlign: 'center', fontSize: 11 }}>
+                      … 외 {parsed.rows.length - 50}건 (등록 시 모두 처리)
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button className="btn btn-ghost" onClick={() => { setStep('select'); setParsed(null); }}>← 다시 선택</button>
+                <button className="btn btn-primary" onClick={startUpload}
+                  disabled={!parsed.rows.length} style={{ flex: 1 }}>
+                  ✅ {parsed.rows.length}명 일괄 등록 시작
+                </button>
+              </div>
+            </>
+          )}
+
+          {step === 'uploading' && (
+            <>
+              <div style={{ textAlign: 'center', padding: 20 }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>
+                  {progress.done} / {progress.total} 명 등록 중…
+                </div>
+              </div>
+              <div style={{ height: 8, background: 'var(--surface-2)', borderRadius: 999, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%',
+                  width: `${(progress.done / Math.max(1, progress.total)) * 100}%`,
+                  background: 'var(--brand-primary)',
+                  transition: 'width 0.2s ease'
+                }} />
+              </div>
+              {progress.failed.length > 0 && (
+                <div className="muted" style={{ fontSize: 11, color: 'var(--alert-warn)' }}>
+                  ⚠ 실패 누적: {progress.failed.length}건
+                </div>
+              )}
+            </>
+          )}
+
+          {step === 'done' && (
+            <>
+              <div style={{ textAlign: 'center', padding: 20 }}>
+                <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>
+                  {progress.total - progress.failed.length}명 등록 완료
+                </div>
+                {progress.failed.length > 0 && (
+                  <div style={{ fontSize: 13, color: 'var(--alert-warn)', marginTop: 4 }}>
+                    실패 {progress.failed.length}건
+                  </div>
+                )}
+              </div>
+              {progress.failed.length > 0 && (
+                <details open style={{ background: 'var(--alert-warn-bg)', padding: 10, borderRadius: 'var(--r-sm)' }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 600 }}>실패한 행</summary>
+                  <ul style={{ margin: '8px 0 0 18px', padding: 0, fontSize: 12 }}>
+                    {progress.failed.map((f, i) => <li key={i}>{f.row}행 · {f.name}: {f.msg}</li>)}
+                  </ul>
+                </details>
+              )}
+              <button className="btn btn-primary" onClick={onComplete} style={{ marginTop: 8 }}>
+                ✓ 확인하고 닫기
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 Object.assign(window, {
   AdminManageButton, AdminManageDrawer, CohortsManagement, AddCohortModal,
-  SyncSettings, GistSettingsForm, SupabaseSettingsForm
+  SyncSettings, GistSettingsForm, SupabaseSettingsForm,
+  BulkUploadModal, downloadCsvSample, parseCsv
 });
