@@ -52,6 +52,17 @@ function LoginScreen({ onLogin }) {
     } catch (e) {}
   }, []);
 
+  /* Supabase 비동기 bootstrap이 끝나면 cohort_meta에 archived_at이 채워져
+     activeCohorts가 줄어들 수 있다. cohortId가 inactive로 남으면 종료된 기수의
+     학생들이 grid에 표시되는 회귀가 발생 → 자동으로 첫 active로 reset. */
+  useEffect(() => {
+    const activeIds = window.getActiveCohortIds();
+    if (activeIds.length > 0 && !activeIds.includes(cohortId)) {
+      setCohortId(activeIds[0]);
+      setSelectedName(null);
+    }
+  }, [storeVersion]);
+
   /* ---- 학생 이름 선택 시 비밀번호 단계 결정 ---- */
   function pickStudent(name) {
     setSelectedName(name);
