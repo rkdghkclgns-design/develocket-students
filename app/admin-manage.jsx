@@ -101,7 +101,20 @@ function AdminManageDrawer({ cohortId, kpiTarget, onChangeKpi, onClose, onChange
               {showAdd && (
                 <AddStudentModal
                   defaultCohort={addCohort}
-                  onAdd={(payload) => { window.STORE.addStudent(payload.cohort, payload); setShowAdd(false); refresh(); }}
+                  onAdd={async (payload) => {
+                    try {
+                      const r = window.STORE.addStudent(payload.cohort, payload);
+                      // Supabase 모드는 Promise — 응답 후 close + refresh (안 그러면 목록에 안 보여 "추가 안 됨"으로 오인)
+                      if (r && typeof r.then === 'function') await r;
+                      setShowAdd(false);
+                      refresh();
+                      window.showToast && window.showToast(`✓ ${payload.name} 추가됨`, 'success');
+                    } catch (e) {
+                      window.showToast
+                        ? window.showToast('수강생 추가 실패: ' + (e.message || e), 'error')
+                        : alert('수강생 추가 실패: ' + (e.message || e));
+                    }
+                  }}
                   onClose={() => setShowAdd(false)}
                 />
               )}
