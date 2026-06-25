@@ -72,23 +72,28 @@ function AdminManageDrawer({ cohortId, kpiTarget, onChangeKpi, onClose, onChange
         <div className="drawer-body">
           {tab === 'students' && (
             <>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14 }}>
-                <div className="student-search" style={{ flex: 1, marginBottom: 0 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+                <div className="student-search" style={{ flex: '1 1 200px', marginBottom: 0, minWidth: 180 }}>
                   <Icon.Search />
                   <input className="input" placeholder="이름으로 검색"
                     value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={downloadCsvSample}
-                  title="CSV 샘플 다운로드 (UTF-8 BOM, Excel 한글 호환)">
-                  📥 CSV 샘플
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => { setShowBulk(true); setAddCohort(cohortId); }}
-                  title="CSV 파일로 여러 수강생을 한 번에 등록">
-                  📤 CSV 업로드
-                </button>
-                <button className="btn btn-primary btn-sm" onClick={() => { setShowAdd(true); setAddCohort(cohortId); }}>
-                  <Icon.Plus /> 수강생 추가
-                </button>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={downloadCsvSample}
+                    title="CSV 샘플 다운로드 (UTF-8 BOM, Excel 한글 호환)"
+                    style={{ whiteSpace: 'nowrap' }}>
+                    📥 샘플
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setShowBulk(true); setAddCohort(cohortId); }}
+                    title="CSV 파일로 여러 수강생을 한 번에 등록"
+                    style={{ whiteSpace: 'nowrap' }}>
+                    📤 CSV 업로드
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={() => { setShowAdd(true); setAddCohort(cohortId); }}
+                    style={{ whiteSpace: 'nowrap' }}>
+                    <Icon.Plus /> 수강생 추가
+                  </button>
+                </div>
               </div>
 
               <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
